@@ -1,34 +1,29 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Command, CommandInput } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 
 type SearchResult = {
-  cardUuid: string;
+  canonicalKey: string;
+  representativeUuid: string;
   name: string;
-  setCode: string;
-  setName: string | null;
   manaCost: string | null;
   manaValue: number | null;
   typeLine: string | null;
   rarity: string | null;
-  colors: string;
-  colorIdentity: string;
-  isLegendary: boolean;
-  isBasic: boolean;
-  isCommander: boolean;
-  legalCommander: string | null;
-  isBannedCommander: boolean;
+  colors: string[];
+  colorIdentity: string[];
+  latestSetCode: string | null;
+  latestReleaseDate: string | null;
   qty: number;
   foilQty: number;
 };
@@ -38,31 +33,6 @@ type SetSummary = {
   name: string;
   releaseDate: string | null;
   type: string | null;
-};
-
-type CardDetails = {
-  card: {
-    uuid: string;
-    name: string;
-    manaCost: string | null;
-    manaValue: number | null;
-    type: string | null;
-    rarity: string | null;
-    setCode: string | null;
-    setName: string | null;
-    text: string | null;
-    colors: string[];
-    colorIdentity: string[];
-    legalities: Record<string, string>;
-  };
-  printings: Array<{
-    uuid: string;
-    setCode: string;
-    setName: string | null;
-    rarity: string | null;
-    number: string | null;
-    releaseDate: string | null;
-  }>;
 };
 
 const colorOptions = [
@@ -86,32 +56,19 @@ function useDebouncedValue<T>(value: T, delay = 300) {
   return debounced;
 }
 
-function ColorPips({ identity }: { identity: string }) {
-  if (!identity) {
+function ColorPips({ identity }: { identity: string[] }) {
+  if (!identity.length) {
     return <Badge variant="secondary">C</Badge>;
   }
   return (
     <div className="flex flex-wrap gap-1">
-      {identity.split("").map((color) => (
+      {identity.map((color) => (
         <Badge key={color} variant="secondary">
           {color}
         </Badge>
       ))}
     </div>
   );
-}
-
-function LegalityBadge({
-  isBanned,
-  legal,
-}: {
-  isBanned: boolean;
-  legal: string | null;
-}) {
-  if (isBanned || (legal && legal !== "Legal")) {
-    return <Badge variant="destructive">Banned</Badge>;
-  }
-  return <Badge variant="outline">Legal</Badge>;
 }
 
 export default function CollectionPage() {
@@ -124,15 +81,9 @@ export default function CollectionPage() {
   const [setCode, setSetCode] = useState("");
   const [colors, setColors] = useState<string[]>([]);
   const [colorIdentity, setColorIdentity] = useState<string[]>([]);
-  const [isLegendary, setIsLegendary] = useState(false);
-  const [isBasic, setIsBasic] = useState(false);
-  const [isCommander, setIsCommander] = useState(false);
-  const [legalCommander, setLegalCommander] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [sets, setSets] = useState<SetSummary[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedCard, setSelectedCard] = useState<SearchResult | null>(null);
-  const [cardDetails, setCardDetails] = useState<CardDetails | null>(null);
 
   const debouncedQuery = useDebouncedValue(query, 400);
   const debouncedOracle = useDebouncedValue(oracleText, 400);
@@ -168,10 +119,6 @@ export default function CollectionPage() {
       if (!quickSearch) {
         params.set("mvMin", String(manaRange[0]));
         params.set("mvMax", String(manaRange[1]));
-        if (isLegendary) params.set("isLegendary", "true");
-        if (isBasic) params.set("isBasic", "true");
-        if (isCommander) params.set("isCommander", "true");
-        if (legalCommander) params.set("legalCommander", "true");
       }
       const response = await fetch(`/api/search?${params.toString()}`);
       const data = await response.json();
@@ -187,25 +134,7 @@ export default function CollectionPage() {
     setCode,
     manaRange,
     quickSearch,
-    isLegendary,
-    isBasic,
-    isCommander,
-    legalCommander,
   ]);
-
-  useEffect(() => {
-    async function loadCardDetails() {
-      if (!selectedCard) {
-        setCardDetails(null);
-        return;
-      }
-      const response = await fetch(`/api/cards/${selectedCard.cardUuid}`);
-      if (!response.ok) return;
-      const data = (await response.json()) as CardDetails;
-      setCardDetails(data);
-    }
-    loadCardDetails();
-  }, [selectedCard]);
 
   async function updateCollection(cardUuid: string, delta: number) {
     const response = await fetch("/api/collection", {
@@ -220,12 +149,11 @@ export default function CollectionPage() {
 
     setResults((prev) =>
       prev.map((card) =>
-        card.cardUuid === cardUuid ? { ...card, qty: updatedQty } : card,
+        card.representativeUuid === cardUuid
+          ? { ...card, qty: updatedQty + card.foilQty }
+          : card,
       ),
     );
-    if (selectedCard?.cardUuid === cardUuid) {
-      setSelectedCard({ ...selectedCard, qty: updatedQty });
-    }
   }
 
   function toggleSelection(value: string, setState: (next: string[]) => void, state: string[]) {
@@ -313,54 +241,53 @@ export default function CollectionPage() {
 
           <div className="grid gap-3">
             {results.map((card) => (
-              <Card
-                key={card.cardUuid}
-                className="cursor-pointer p-4 hover:border-primary/40"
-                onClick={() => setSelectedCard(card)}
+              <Link
+                key={card.canonicalKey}
+                href={`/cards/${encodeURIComponent(card.canonicalKey)}`}
+                className="block"
               >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base font-semibold">{card.name}</h3>
-                      <span className="text-sm text-muted-foreground">
-                        {card.manaCost}
-                      </span>
+                <Card className="cursor-pointer p-4 hover:border-primary/40">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-semibold">{card.name}</h3>
+                        <span className="text-sm text-muted-foreground">
+                          {card.manaCost}
+                        </span>
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {card.typeLine} • {card.latestSetCode ?? "n/a"} •{" "}
+                        {card.rarity ?? "n/a"}
+                      </div>
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      {card.typeLine} • {card.setCode} • {card.rarity}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <ColorPips identity={card.colorIdentity} />
+                      <Badge variant="secondary">Owned: {card.qty}</Badge>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            updateCollection(card.representativeUuid, -1);
+                          }}
+                        >
+                          -
+                        </Button>
+                        <Button
+                          size="icon"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            updateCollection(card.representativeUuid, 1);
+                          }}
+                        >
+                          +
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <ColorPips identity={card.colorIdentity} />
-                    <LegalityBadge
-                      isBanned={card.isBannedCommander}
-                      legal={card.legalCommander}
-                    />
-                    <Badge variant="secondary">Owned: {card.qty}</Badge>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          updateCollection(card.cardUuid, -1);
-                        }}
-                      >
-                        -
-                      </Button>
-                      <Button
-                        size="icon"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          updateCollection(card.cardUuid, 1);
-                        }}
-                      >
-                        +
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </Card>
+                </Card>
+              </Link>
             ))}
           </div>
         </div>
@@ -444,99 +371,8 @@ export default function CollectionPage() {
               </SelectContent>
             </Select>
           </div>
-
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                checked={isLegendary}
-                onCheckedChange={(value) => setIsLegendary(Boolean(value))}
-              />
-              <span className="text-sm">Legendary</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                checked={isBasic}
-                onCheckedChange={(value) => setIsBasic(Boolean(value))}
-              />
-              <span className="text-sm">Basic</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                checked={isCommander}
-                onCheckedChange={(value) => setIsCommander(Boolean(value))}
-              />
-              <span className="text-sm">Commander-eligible</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                checked={legalCommander}
-                onCheckedChange={(value) => setLegalCommander(Boolean(value))}
-              />
-              <span className="text-sm">Legal in Commander</span>
-            </div>
-          </div>
         </div>
       </aside>
-
-      <Sheet open={!!selectedCard} onOpenChange={() => setSelectedCard(null)}>
-        <SheetContent className="w-full max-w-xl">
-          <SheetHeader>
-            <SheetTitle>{selectedCard?.name ?? "Card Details"}</SheetTitle>
-          </SheetHeader>
-          {selectedCard && (
-            <div className="space-y-4 pt-4">
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary">{selectedCard.setCode}</Badge>
-                <Badge variant="outline">{selectedCard.rarity}</Badge>
-                <LegalityBadge
-                  isBanned={selectedCard.isBannedCommander}
-                  legal={selectedCard.legalCommander}
-                />
-              </div>
-              <div className="text-sm text-muted-foreground">
-                {selectedCard.typeLine}
-              </div>
-              <div className="whitespace-pre-line text-sm">
-                {cardDetails?.card.text ?? "No oracle text available."}
-              </div>
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => updateCollection(selectedCard.cardUuid, -1)}
-                >
-                  -
-                </Button>
-                <span className="text-sm font-semibold">
-                  Owned: {selectedCard.qty}
-                </span>
-                <Button onClick={() => updateCollection(selectedCard.cardUuid, 1)}>
-                  +
-                </Button>
-              </div>
-              <div>
-                <h4 className="text-sm font-semibold text-muted-foreground">
-                  Printings
-                </h4>
-                <div className="mt-2 space-y-2">
-                  {cardDetails?.printings?.map((printing) => (
-                    <div
-                      key={printing.uuid}
-                      className="flex items-center justify-between text-sm"
-                    >
-                      <span>
-                        {printing.setCode} — {printing.setName ?? "Unknown set"}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {printing.rarity}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
     </div>
   );
 }

@@ -40,6 +40,7 @@ type DeckCard = {
   category: string;
   isCommander: boolean;
   ownedQty: number;
+  canonicalKey: string | null;
   details: CardDetails | null;
 };
 
@@ -86,15 +87,15 @@ type DeckValidation = {
 };
 
 type SearchResult = {
-  cardUuid: string;
+  canonicalKey: string;
+  representativeUuid: string;
   name: string;
-  setCode: string;
   manaCost: string | null;
   typeLine: string | null;
   rarity: string | null;
-  colorIdentity: string;
-  isBannedCommander: boolean;
-  legalCommander: string | null;
+  colorIdentity: string[];
+  latestSetCode: string | null;
+  latestReleaseDate: string | null;
   qty: number;
 };
 
@@ -444,11 +445,13 @@ export default function DeckEditorPage() {
 
   const addableSearchResults = useMemo(() => {
     if (!deckData) return searchResults;
-    const deckQtyMap = new Map(
-      deckData.cards.map((card) => [card.cardUuid, card.qty]),
-    );
+    const deckQtyMap = new Map<string, number>();
+    deckData.cards.forEach((card) => {
+      const key = card.canonicalKey ?? card.cardUuid;
+      deckQtyMap.set(key, (deckQtyMap.get(key) ?? 0) + card.qty);
+    });
     return searchResults.map((result) => {
-      const used = deckQtyMap.get(result.cardUuid) ?? 0;
+      const used = deckQtyMap.get(result.canonicalKey) ?? 0;
       return { ...result, available: result.qty - used };
     });
   }, [searchResults, deckData]);
@@ -703,20 +706,20 @@ export default function DeckEditorPage() {
                   deckData.deck.allowMissing || card.available > 0;
                 return (
                   <div
-                    key={card.cardUuid}
+                    key={card.canonicalKey}
                     className="flex items-center justify-between text-sm"
                   >
                     <div>
                       <div className="font-medium">{card.name}</div>
                       <div className="text-xs text-muted-foreground">
-                        {card.typeLine} • {card.setCode}
+                        {card.typeLine} • {card.latestSetCode ?? "n/a"}
                       </div>
                     </div>
                     <Button
                       size="sm"
                       variant={canAdd ? "default" : "outline"}
                       disabled={!canAdd || loading}
-                      onClick={() => addCardToDeck(card.cardUuid)}
+                      onClick={() => addCardToDeck(card.representativeUuid)}
                     >
                       Add
                     </Button>
