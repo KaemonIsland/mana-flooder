@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import { env } from "@/lib/env";
 import { getAppSettings } from "@/lib/app-settings";
+import { getMetaSummary } from "@/lib/mtgjson/queries/meta";
 
 export type MtgjsonStatus = {
   dbPath: string;
@@ -27,24 +28,9 @@ export async function getMtgjsonStatus(): Promise<MtgjsonStatus> {
     dbExists = false;
   }
 
-  let metaBuildDate: string | null = null;
-  let metaVersion: string | null = null;
-
-  try {
-    const metaRaw = await fs.readFile(`${env.MTGJSON_DIR}/Meta.json`, "utf-8");
-    const meta = JSON.parse(metaRaw) as Record<string, unknown>;
-    metaBuildDate =
-      (meta.date as string | undefined) ??
-      (meta.data as { date?: string } | undefined)?.date ??
-      null;
-    metaVersion =
-      (meta.version as string | undefined) ??
-      (meta.data as { version?: string } | undefined)?.version ??
-      null;
-  } catch {
-    metaBuildDate = null;
-    metaVersion = null;
-  }
+  const meta = getMetaSummary();
+  const metaBuildDate = meta?.date ?? null;
+  const metaVersion = meta?.version ?? null;
 
   const settings = await getAppSettings();
 

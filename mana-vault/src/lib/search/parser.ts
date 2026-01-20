@@ -14,10 +14,6 @@ export type SearchFilters = {
   manaValue?: ManaValueFilter;
   rarities?: string[];
   setCodes?: string[];
-  isLegendary?: boolean;
-  isBasic?: boolean;
-  isCommander?: boolean;
-  legalCommander?: boolean;
 };
 
 const tokenRegex = /"[^"]+"|\S+/g;
@@ -148,18 +144,6 @@ export function parseSearchQuery(input: string): SearchFilters {
             new Set([...(baseFilters.setCodes ?? []), value.toUpperCase()]),
           );
           break;
-        case "is": {
-          const lowered = value.toLowerCase();
-          if (lowered === "legendary") baseFilters.isLegendary = true;
-          if (lowered === "basic") baseFilters.isBasic = true;
-          if (lowered === "commander") baseFilters.isCommander = true;
-          break;
-        }
-        case "legal": {
-          const lowered = value.toLowerCase();
-          if (lowered === "commander") baseFilters.legalCommander = true;
-          break;
-        }
         default:
           addUnique(baseFilters.textTerms, normalizeValue(token));
           break;
