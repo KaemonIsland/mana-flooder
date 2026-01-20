@@ -1,0 +1,78 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Deck {
+  id           String         @id @default(cuid())
+  name         String
+  notes        String?
+  allowMissing Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  cards        DeckCard[]
+  categories   DeckCategory[]
+}
+
+model DeckCategory {
+  id        String   @id @default(cuid())
+  deckId    String
+  name      String
+  sortOrder Int
+  deck      Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([deckId, name])
+}
+
+model DeckCard {
+  id          String   @id @default(cuid())
+  deckId      String
+  cardUuid    String
+  qty         Int      @default(1)
+  category    String
+  isCommander Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deck        Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+
+  @@unique([deckId, cardUuid])
+  @@index([deckId, category])
+}
+
+model CollectionCard {
+  id        String   @id @default(cuid())
+  cardUuid  String   @unique
+  qty       Int      @default(0)
+  foilQty   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CategoryPreset {
+  id        String   @id @default(cuid())
+  name      String
+  sortOrder Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AppSetting {
+  id                   String   @id @default(cuid())
+  mtgjsonBuildDate     String?
+  mtgjsonVersion       String?
+  importStatus         String?
+  lastImportAt         DateTime?
+  searchIndexUpdatedAt DateTime?
+  mtgjsonFileSize      Int?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}

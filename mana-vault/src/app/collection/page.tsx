@@ -1,0 +1,542 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Command, CommandInput } from "@/components/ui/command";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+
+type SearchResult = {
+  cardUuid: string;
+  name: string;
+  setCode: string;
+  setName: string | null;
+  manaCost: string | null;
+  manaValue: number | null;
+  typeLine: string | null;
+  rarity: string | null;
+  colors: string;
+  colorIdentity: string;
+  isLegendary: boolean;
+  isBasic: boolean;
+  isCommander: boolean;
+  legalCommander: string | null;
+  isBannedCommander: boolean;
+  qty: number;
+  foilQty: number;
+};
+
+type SetSummary = {
+  code: string;
+  name: string;
+  releaseDate: string | null;
+  type: string | null;
+};
+
+type CardDetails = {
+  card: {
+    uuid: string;
+    name: string;
+    manaCost: string | null;
+    manaValue: number | null;
+    type: string | null;
+    rarity: string | null;
+    setCode: string | null;
+    setName: string | null;
+    text: string | null;
+    colors: string[];
+    colorIdentity: string[];
+    legalities: Record<string, string>;
+  };
+  printings: Array<{
+    uuid: string;
+    setCode: string;
+    setName: string | null;
+    rarity: string | null;
+    number: string | null;
+    releaseDate: string | null;
+  }>;
+};
+
+const colorOptions = [
+  { key: "W", label: "W" },
+  { key: "U", label: "U" },
+  { key: "B", label: "B" },
+  { key: "R", label: "R" },
+  { key: "G", label: "G" },
+  { key: "C", label: "C" },
+  { key: "M", label: "Multi" },
+];
+
+function useDebouncedValue<T>(value: T, delay = 300) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(handle);
+  }, [value, delay]);
+
+  return debounced;
+}
+
+function ColorPips({ identity }: { identity: string }) {
+  if (!identity) {
+    return <Badge variant="secondary">C</Badge>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {identity.split("").map((color) => (
+        <Badge key={color} variant="secondary">
+          {color}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+function LegalityBadge({
+  isBanned,
+  legal,
+}: {
+  isBanned: boolean;
+  legal: string | null;
+}) {
+  if (isBanned || (legal && legal !== "Legal")) {
+    return <Badge variant="destructive">Banned</Badge>;
+  }
+  return <Badge variant="outline">Legal</Badge>;
+}
+
+export default function CollectionPage() {
+  const [query, setQuery] = useState("");
+  const [oracleText, setOracleText] = useState("");
+  const [typeText, setTypeText] = useState("");
+  const [quickSearch, setQuickSearch] = useState(true);
+  const [manaRange, setManaRange] = useState<[number, number]>([0, 10]);
+  const [rarity, setRarity] = useState("");
+  const [setCode, setSetCode] = useState("");
+  const [colors, setColors] = useState<string[]>([]);
+  const [colorIdentity, setColorIdentity] = useState<string[]>([]);
+  const [isLegendary, setIsLegendary] = useState(false);
+  const [isBasic, setIsBasic] = useState(false);
+  const [isCommander, setIsCommander] = useState(false);
+  const [legalCommander, setLegalCommander] = useState(false);
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [sets, setSets] = useState<SetSummary[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedCard, setSelectedCard] = useState<SearchResult | null>(null);
+  const [cardDetails, setCardDetails] = useState<CardDetails | null>(null);
+
+  const debouncedQuery = useDebouncedValue(query, 400);
+  const debouncedOracle = useDebouncedValue(oracleText, 400);
+  const debouncedType = useDebouncedValue(typeText, 400);
+
+  const computedQuery = useMemo(() => {
+    const parts = [debouncedQuery];
+    if (debouncedOracle) parts.push(`o:"${debouncedOracle}"`);
+    if (debouncedType) parts.push(`t:"${debouncedType}"`);
+    return parts.filter(Boolean).join(" ").trim();
+  }, [debouncedQuery, debouncedOracle, debouncedType]);
+
+  useEffect(() => {
+    async function loadSets() {
+      const response = await fetch("/api/sets");
+      if (!response.ok) return;
+      const data = (await response.json()) as { sets: SetSummary[] };
+      setSets(data.sets ?? []);
+    }
+    loadSets();
+  }, []);
+
+  useEffect(() => {
+    async function loadResults() {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (computedQuery) params.set("q", computedQuery);
+      if (colors.length) params.set("colors", colors.join(","));
+      if (colorIdentity.length)
+        params.set("colorIdentity", colorIdentity.join(","));
+      if (rarity) params.set("rarity", rarity);
+      if (setCode) params.set("set", setCode);
+      if (!quickSearch) {
+        params.set("mvMin", String(manaRange[0]));
+        params.set("mvMax", String(manaRange[1]));
+        if (isLegendary) params.set("isLegendary", "true");
+        if (isBasic) params.set("isBasic", "true");
+        if (isCommander) params.set("isCommander", "true");
+        if (legalCommander) params.set("legalCommander", "true");
+      }
+      const response = await fetch(`/api/search?${params.toString()}`);
+      const data = await response.json();
+      setResults(data.results ?? []);
+      setLoading(false);
+    }
+    loadResults();
+  }, [
+    computedQuery,
+    colors,
+    colorIdentity,
+    rarity,
+    setCode,
+    manaRange,
+    quickSearch,
+    isLegendary,
+    isBasic,
+    isCommander,
+    legalCommander,
+  ]);
+
+  useEffect(() => {
+    async function loadCardDetails() {
+      if (!selectedCard) {
+        setCardDetails(null);
+        return;
+      }
+      const response = await fetch(`/api/cards/${selectedCard.cardUuid}`);
+      if (!response.ok) return;
+      const data = (await response.json()) as CardDetails;
+      setCardDetails(data);
+    }
+    loadCardDetails();
+  }, [selectedCard]);
+
+  async function updateCollection(cardUuid: string, delta: number) {
+    const response = await fetch("/api/collection", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cardUuid, delta }),
+    });
+
+    if (!response.ok) return;
+    const data = await response.json();
+    const updatedQty = data.card?.qty ?? 0;
+
+    setResults((prev) =>
+      prev.map((card) =>
+        card.cardUuid === cardUuid ? { ...card, qty: updatedQty } : card,
+      ),
+    );
+    if (selectedCard?.cardUuid === cardUuid) {
+      setSelectedCard({ ...selectedCard, qty: updatedQty });
+    }
+  }
+
+  function toggleSelection(value: string, setState: (next: string[]) => void, state: string[]) {
+    if (state.includes(value)) {
+      setState(state.filter((item) => item !== value));
+    } else {
+      setState([...state, value]);
+    }
+  }
+
+  return (
+    <div className="flex gap-6">
+      <div className="flex-1 space-y-4">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="min-w-[320px] flex-1">
+              <Command className="rounded-lg border">
+                <CommandInput
+                  placeholder="Search cards (name, text, etc.)"
+                  value={query}
+                  onValueChange={setQuery}
+                />
+              </Command>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={!quickSearch}
+                onCheckedChange={(value) => setQuickSearch(!value)}
+              />
+              <span className="text-sm text-muted-foreground">
+                {quickSearch ? "Quick Search" : "Advanced Search"}
+              </span>
+            </div>
+            <div className="w-52">
+              <Select
+                value={setCode || "all"}
+                onValueChange={(value) =>
+                  setSetCode(value === "all" ? "" : value)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All sets" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sets</SelectItem>
+                  {sets.map((set) => (
+                    <SelectItem key={set.code} value={set.code}>
+                      {set.code} — {set.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {!quickSearch && (
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Oracle text contains</Label>
+                <Input
+                  value={oracleText}
+                  onChange={(event) => setOracleText(event.target.value)}
+                  placeholder="Draw a card"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Type contains</Label>
+                <Input
+                  value={typeText}
+                  onChange={(event) => setTypeText(event.target.value)}
+                  placeholder="Creature"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading cards...</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Showing {results.length} cards
+            </p>
+          )}
+
+          <div className="grid gap-3">
+            {results.map((card) => (
+              <Card
+                key={card.cardUuid}
+                className="cursor-pointer p-4 hover:border-primary/40"
+                onClick={() => setSelectedCard(card)}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-semibold">{card.name}</h3>
+                      <span className="text-sm text-muted-foreground">
+                        {card.manaCost}
+                      </span>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {card.typeLine} • {card.setCode} • {card.rarity}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ColorPips identity={card.colorIdentity} />
+                    <LegalityBadge
+                      isBanned={card.isBannedCommander}
+                      legal={card.legalCommander}
+                    />
+                    <Badge variant="secondary">Owned: {card.qty}</Badge>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          updateCollection(card.cardUuid, -1);
+                        }}
+                      >
+                        -
+                      </Button>
+                      <Button
+                        size="icon"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          updateCollection(card.cardUuid, 1);
+                        }}
+                      >
+                        +
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <aside className="w-80 space-y-6 border-l pl-6">
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold uppercase text-muted-foreground">
+            Filters
+          </h3>
+
+          <div className="space-y-2">
+            <Label>Colors</Label>
+            <div className="flex flex-wrap gap-2">
+              {colorOptions.map((color) => (
+                <Button
+                  key={color.key}
+                  variant={colors.includes(color.key) ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => toggleSelection(color.key, setColors, colors)}
+                >
+                  {color.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Color identity</Label>
+            <div className="flex flex-wrap gap-2">
+              {colorOptions.map((color) => (
+                <Button
+                  key={color.key}
+                  variant={
+                    colorIdentity.includes(color.key) ? "default" : "outline"
+                  }
+                  size="sm"
+                  onClick={() =>
+                    toggleSelection(color.key, setColorIdentity, colorIdentity)
+                  }
+                >
+                  {color.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Mana value</Label>
+            <Slider
+              value={manaRange}
+              min={0}
+              max={12}
+              step={1}
+              onValueChange={(value) =>
+                setManaRange([value[0], value[1]] as [number, number])
+              }
+            />
+            <div className="text-xs text-muted-foreground">
+              {manaRange[0]} - {manaRange[1]}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Rarity</Label>
+            <Select
+              value={rarity || "all"}
+              onValueChange={(value) =>
+                setRarity(value === "all" ? "" : value)
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Any rarity" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Any</SelectItem>
+                <SelectItem value="common">Common</SelectItem>
+                <SelectItem value="uncommon">Uncommon</SelectItem>
+                <SelectItem value="rare">Rare</SelectItem>
+                <SelectItem value="mythic">Mythic</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={isLegendary}
+                onCheckedChange={(value) => setIsLegendary(Boolean(value))}
+              />
+              <span className="text-sm">Legendary</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={isBasic}
+                onCheckedChange={(value) => setIsBasic(Boolean(value))}
+              />
+              <span className="text-sm">Basic</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={isCommander}
+                onCheckedChange={(value) => setIsCommander(Boolean(value))}
+              />
+              <span className="text-sm">Commander-eligible</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={legalCommander}
+                onCheckedChange={(value) => setLegalCommander(Boolean(value))}
+              />
+              <span className="text-sm">Legal in Commander</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <Sheet open={!!selectedCard} onOpenChange={() => setSelectedCard(null)}>
+        <SheetContent className="w-full max-w-xl">
+          <SheetHeader>
+            <SheetTitle>{selectedCard?.name ?? "Card Details"}</SheetTitle>
+          </SheetHeader>
+          {selectedCard && (
+            <div className="space-y-4 pt-4">
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">{selectedCard.setCode}</Badge>
+                <Badge variant="outline">{selectedCard.rarity}</Badge>
+                <LegalityBadge
+                  isBanned={selectedCard.isBannedCommander}
+                  legal={selectedCard.legalCommander}
+                />
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {selectedCard.typeLine}
+              </div>
+              <div className="whitespace-pre-line text-sm">
+                {cardDetails?.card.text ?? "No oracle text available."}
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => updateCollection(selectedCard.cardUuid, -1)}
+                >
+                  -
+                </Button>
+                <span className="text-sm font-semibold">
+                  Owned: {selectedCard.qty}
+                </span>
+                <Button onClick={() => updateCollection(selectedCard.cardUuid, 1)}>
+                  +
+                </Button>
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-muted-foreground">
+                  Printings
+                </h4>
+                <div className="mt-2 space-y-2">
+                  {cardDetails?.printings?.map((printing) => (
+                    <div
+                      key={printing.uuid}
+                      className="flex items-center justify-between text-sm"
+                    >
+                      <span>
+                        {printing.setCode} — {printing.setName ?? "Unknown set"}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {printing.rarity}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
