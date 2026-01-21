@@ -20,6 +20,7 @@ export const metadata: Metadata = {
 
 const navItems = [
   { href: "/collection", label: "Collection" },
+  { href: "/search", label: "Search" },
   { href: "/decks", label: "Decks" },
   { href: "/settings/mtgjson", label: "MTGJSON Import/Status" },
   { href: "/about", label: "About" },
@@ -35,22 +36,22 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <div className="flex min-h-screen bg-background">
-          <aside className="w-64 border-r bg-sidebar">
-            <div className="px-5 py-6">
-              <div className="text-lg font-semibold text-foreground">
+        <div className="flex min-h-screen bg-transparent">
+          <aside className="hidden w-72 flex-col border-r border-white/10 bg-[color:var(--panel)]/80 backdrop-blur-xl lg:flex">
+            <div className="px-6 py-7">
+              <div className="text-lg font-semibold tracking-tight text-white">
                 ManaVault
               </div>
-              <p className="text-xs text-muted-foreground">
-                Collection + Commander Builder
+              <p className="text-xs text-white/60">
+                Arcane collection + Commander builder
               </p>
             </div>
-            <nav className="space-y-1 px-3 pb-6">
+            <nav className="space-y-1 px-4 pb-6">
               {navItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="block rounded-md px-3 py-2 text-sm font-medium text-foreground/80 hover:bg-accent hover:text-foreground"
+                  className="block rounded-xl border border-transparent px-4 py-2 text-sm font-medium text-white/70 transition-all duration-200 ease-out hover:border-violet-400/30 hover:bg-white/5 hover:text-white"
                 >
                   {item.label}
                 </Link>
@@ -58,7 +59,7 @@ export default function RootLayout({
             </nav>
           </aside>
           <main className="flex-1">
-            <div className="px-8 py-6">{children}</div>
+            <div className="px-6 py-6 lg:px-10 lg:py-8">{children}</div>
           </main>
         </div>
       </body>
