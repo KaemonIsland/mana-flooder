@@ -6,7 +6,11 @@ import { env } from "@/lib/env";
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 // Create the adapter for better-sqlite3
-const databaseUrl = env.DATABASE_URL;
+const databaseUrl = process.env.DATABASE_URL ?? env.DATABASE_URL;
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = databaseUrl;
+}
+
 const normalizedUrl = databaseUrl.startsWith("file:")
   ? databaseUrl
   : `file:${databaseUrl}`;
@@ -22,7 +26,6 @@ export const prisma =
   new PrismaClient({
     adapter,
     log: ["error"],
-    datasources: { db: { url: normalizedUrl } },
   });
 
 if (process.env.NODE_ENV !== "production") {
