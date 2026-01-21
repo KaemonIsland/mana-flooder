@@ -203,7 +203,11 @@ export function computeDeckStats(
     const details = lookupMap.get(card.cardUuid);
     if (!details) return;
 
-    if (details.isBannedCommander || details.legalCommander !== "Legal") {
+    const legality = details.legalCommander;
+    if (
+      details.isBannedCommander ||
+      (legality && legality !== "Legal" && legality !== "Unknown")
+    ) {
       issues.push({
         type: "legality",
         message: `${details.name} is not legal in Commander.`,

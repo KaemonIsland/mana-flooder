@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSetSummaries } from "@/lib/mtgjson/queries";
+import { getSetSummaries } from "@/lib/mtgjson/queries/sets";
 
 export async function GET() {
   try {

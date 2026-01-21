@@ -2,21 +2,18 @@ import { getSearchDb } from "@/lib/search/db";
 import type { SearchFilters } from "@/lib/search/parser";
 
 export type SearchResult = {
-  cardUuid: string;
+  canonicalKey: string;
+  representativeUuid: string;
   name: string;
-  setCode: string;
-  setName: string | null;
+  asciiName: string | null;
   manaCost: string | null;
   manaValue: number | null;
   typeLine: string | null;
   rarity: string | null;
-  colors: string;
-  colorIdentity: string;
-  isLegendary: boolean;
-  isBasic: boolean;
-  isCommander: boolean;
-  legalCommander: string | null;
-  isBannedCommander: boolean;
+  colors: string[];
+  colorIdentity: string[];
+  latestSetCode: string | null;
+  latestReleaseDate: string | null;
 };
 
 type SearchOptions = {
@@ -47,7 +44,7 @@ function buildFtsQuery(filters: SearchFilters) {
     appendTerms("text", filters.oracleTerms);
   }
   if (filters.typeTerms.length) {
-    appendTerms("type_line", filters.typeTerms);
+    appendTerms("type", filters.typeTerms);
   }
   if (filters.textTerms.length) {
     for (const term of filters.textTerms) {
@@ -74,18 +71,18 @@ function buildColorClause(
   const clauses: string[] = [];
 
   if (wantsColorless) {
-    clauses.push(`${field} = ''`);
+    clauses.push(`${field} IS NULL OR ${field} = '' OR ${field} = '[]'`);
   }
 
   if (colors.length || wantsMulticolor) {
     const requiredClauses: string[] = [];
     colors.forEach((color, index) => {
       const key = `${field.replace(".", "_")}_color_${index}`;
-      params[key] = color;
+      params[key] = `"${color}"`;
       requiredClauses.push(`instr(${field}, @${key}) > 0`);
     });
     if (wantsMulticolor) {
-      requiredClauses.push(`length(${field}) > 1`);
+      requiredClauses.push(`${field} LIKE '%","%'`);
     }
     clauses.push(requiredClauses.join(" AND "));
   }
@@ -102,7 +99,7 @@ export function searchCards(filters: SearchFilters, options: SearchOptions = {})
   const ftsQuery = buildFtsQuery(filters);
   let joinFts = "";
   if (ftsQuery) {
-    joinFts = "JOIN search_cards_fts fts ON fts.rowid = s.id";
+    joinFts = "JOIN card_search_fts fts ON fts.canonicalKey = s.canonicalKey";
     clauses.push("fts MATCH @ftsQuery");
     params.ftsQuery = ftsQuery;
   }
@@ -111,7 +108,7 @@ export function searchCards(filters: SearchFilters, options: SearchOptions = {})
   if (colorClause) clauses.push(colorClause);
 
   const identityClause = buildColorClause(
-    "s.color_identity",
+    "s.colorIdentity",
     filters.colorIdentity,
     params,
   );
@@ -119,15 +116,15 @@ export function searchCards(filters: SearchFilters, options: SearchOptions = {})
 
   if (filters.manaValue) {
     if (typeof filters.manaValue.eq === "number") {
-      clauses.push("s.mana_value = @manaValueEq");
+      clauses.push("s.manaValue = @manaValueEq");
       params.manaValueEq = filters.manaValue.eq;
     }
     if (typeof filters.manaValue.min === "number") {
-      clauses.push("s.mana_value >= @manaValueMin");
+      clauses.push("s.manaValue >= @manaValueMin");
       params.manaValueMin = filters.manaValue.min;
     }
     if (typeof filters.manaValue.max === "number") {
-      clauses.push("s.mana_value <= @manaValueMax");
+      clauses.push("s.manaValue <= @manaValueMax");
       params.manaValueMax = filters.manaValue.max;
     }
   }
@@ -147,13 +144,8 @@ export function searchCards(filters: SearchFilters, options: SearchOptions = {})
       params[key] = code;
       return `@${key}`;
     });
-    clauses.push(`s.set_code IN (${setParams.join(", ")})`);
+    clauses.push(`s.latestSetCode IN (${setParams.join(", ")})`);
   }
-
-  if (filters.isLegendary) clauses.push("s.is_legendary = 1");
-  if (filters.isBasic) clauses.push("s.is_basic = 1");
-  if (filters.isCommander) clauses.push("s.is_commander = 1");
-  if (filters.legalCommander) clauses.push("s.legal_commander = 'Legal'");
 
   const whereClause = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const limit = options.limit ?? 50;
@@ -164,27 +156,72 @@ export function searchCards(filters: SearchFilters, options: SearchOptions = {})
 
   const query = `
     SELECT
-      s.card_uuid as cardUuid,
+      s.canonicalKey as canonicalKey,
+      s.representativeUuid as representativeUuid,
       s.name,
-      s.set_code as setCode,
-      s.set_name as setName,
-      s.mana_cost as manaCost,
-      s.mana_value as manaValue,
-      s.type_line as typeLine,
+      s.asciiName as asciiName,
+      s.manaCost as manaCost,
+      s.manaValue as manaValue,
+      s.type as typeLine,
       s.rarity,
       s.colors,
-      s.color_identity as colorIdentity,
-      s.is_legendary as isLegendary,
-      s.is_basic as isBasic,
-      s.is_commander as isCommander,
-      s.legal_commander as legalCommander,
-      s.is_banned_commander as isBannedCommander
-    FROM search_cards s
+      s.colorIdentity as colorIdentity,
+      s.latestSetCode as latestSetCode,
+      s.latestReleaseDate as latestReleaseDate
+    FROM card_search s
     ${joinFts}
     ${whereClause}
-    ORDER BY s.name ASC, s.set_code ASC
+    ORDER BY COALESCE(s.normalizedName, s.name) ASC, s.latestReleaseDate DESC
     LIMIT @limit OFFSET @offset
   `;
 
-  return db.prepare(query).all(params) as SearchResult[];
+  const rows = db.prepare(query).all(params) as Array<{
+    canonicalKey: string;
+    representativeUuid: string;
+    name: string;
+    asciiName: string | null;
+    manaCost: string | null;
+    manaValue: number | null;
+    typeLine: string | null;
+    rarity: string | null;
+    colors: string | null;
+    colorIdentity: string | null;
+    latestSetCode: string | null;
+    latestReleaseDate: string | null;
+  }>;
+
+  const parseJsonArray = (value: string | null) => {
+    if (!value) return [];
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.map((entry) => String(entry));
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  };
+
+  const toNumber = (value: unknown) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "number") return value;
+    const parsed = Number(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  };
+
+  return rows.map((row) => ({
+    canonicalKey: row.canonicalKey,
+    representativeUuid: row.representativeUuid,
+    name: row.name,
+    asciiName: row.asciiName ?? null,
+    manaCost: row.manaCost ?? null,
+    manaValue: toNumber(row.manaValue),
+    typeLine: row.typeLine ?? null,
+    rarity: row.rarity ?? null,
+    colors: parseJsonArray(row.colors ?? null),
+    colorIdentity: parseJsonArray(row.colorIdentity ?? null),
+    latestSetCode: row.latestSetCode ?? null,
+    latestReleaseDate: row.latestReleaseDate ?? null,
+  }));
 }

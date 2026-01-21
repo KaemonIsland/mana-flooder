@@ -1,4 +1,5 @@
-import { getSearchDb } from "@/lib/search/db";
+import { getCardBasicsByUuids } from "@/lib/mtgjson/queries/cards";
+import { getCommanderLegalitiesForUuids } from "@/lib/mtgjson/queries/legalities";
 
 export type CardLookup = {
   cardUuid: string;
@@ -16,36 +17,39 @@ export type CardLookup = {
 
 export function getCardLookups(cardUuids: string[]): CardLookup[] {
   if (!cardUuids.length) return [];
-  let db;
-  try {
-    db = getSearchDb();
-  } catch {
-    return [];
-  }
+  const basics = getCardBasicsByUuids(cardUuids);
+  const legalities = getCommanderLegalitiesForUuids(cardUuids);
 
-  const params: Record<string, string> = {};
-  const placeholders = cardUuids.map((uuid, index) => {
-    const key = `uuid_${index}`;
-    params[key] = uuid;
-    return `@${key}`;
+  const normalizeColors = (values: string[]) =>
+    Array.from(new Set(values.map((entry) => entry.toUpperCase())))
+      .sort()
+      .join("");
+
+  return basics.map((card) => {
+    const typeLine = card.typeLine ?? null;
+    const supertypes = card.supertypes ?? [];
+    const isLegendary = supertypes.includes("Legendary");
+    const isBasic = supertypes.includes("Basic");
+
+    const leadershipCommander = card.leadershipSkills?.commander === true;
+    const fallbackCommander =
+      isLegendary && typeLine?.toLowerCase().includes("creature");
+
+    const legalCommander = legalities.get(card.uuid) ?? "Unknown";
+    const isBannedCommander = legalCommander.toLowerCase() === "banned";
+
+    return {
+      cardUuid: card.uuid,
+      name: card.name,
+      colorIdentity: normalizeColors(card.colorIdentity ?? []),
+      typeLine,
+      manaValue: card.manaValue ?? null,
+      colors: normalizeColors(card.colors ?? []),
+      isBasic,
+      isLegendary,
+      isCommander: leadershipCommander || fallbackCommander,
+      legalCommander,
+      isBannedCommander,
+    };
   });
-
-  const query = `
-    SELECT
-      card_uuid as cardUuid,
-      name,
-      color_identity as colorIdentity,
-      type_line as typeLine,
-      mana_value as manaValue,
-      colors,
-      is_basic as isBasic,
-      is_legendary as isLegendary,
-      is_commander as isCommander,
-      legal_commander as legalCommander,
-      is_banned_commander as isBannedCommander
-    FROM search_cards
-    WHERE card_uuid IN (${placeholders.join(", ")})
-  `;
-
-  return db.prepare(query).all(params) as CardLookup[];
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getSearchDb } from "@/lib/search/db";
 import { getCardLookups } from "@/lib/search/lookup";
 import { computeDeckStats } from "@/lib/decks/stats";
 
@@ -32,10 +33,36 @@ export async function GET(_request: Request, context: RouteContext) {
     collection.map((card) => [card.cardUuid, card]),
   );
 
+  const canonicalMap = new Map<string, string>();
+  if (cardUuids.length) {
+    try {
+      const searchDb = getSearchDb();
+      const params: Record<string, string> = {};
+      const placeholders = cardUuids.map((uuid, index) => {
+        const key = `uuid_${index}`;
+        params[key] = uuid;
+        return `@${key}`;
+      });
+      const rows = searchDb
+        .prepare(
+          `
+            SELECT uuid, canonicalKey
+            FROM card_search_printings
+            WHERE uuid IN (${placeholders.join(", ")})
+          `,
+        )
+        .all(params) as Array<{ uuid: string; canonicalKey: string }>;
+      rows.forEach((row) => canonicalMap.set(row.uuid, row.canonicalKey));
+    } catch {
+      // Ignore search index failures for deck view.
+    }
+  }
+
   const cards = deck.cards.map((card) => ({
     ...card,
     details: lookupMap.get(card.cardUuid) ?? null,
     ownedQty: collectionMap.get(card.cardUuid)?.qty ?? 0,
+    canonicalKey: canonicalMap.get(card.cardUuid) ?? null,
   }));
 
   const { stats, validation } = computeDeckStats(deck.cards, cardLookups);
