@@ -6,8 +6,9 @@ export async function POST() {
     [
       { command: "pnpm", args: ["mtgjson:download"] },
       { command: "pnpm", args: ["mtgjson:decompress"] },
+      { command: "pnpm", args: ["mtgjson:reindex"] },
     ],
-    "download",
+    "import",
   );
   return NextResponse.json(result, { status: 202 });
 }

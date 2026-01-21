@@ -9,7 +9,10 @@ const envSchema = z.object({
     .string()
     .default("/data/mtgjson")
     .describe("Directory for MTGJSON assets"),
-  DATABASE_URL: z.string().optional(),
+  DATABASE_URL: z
+    .string()
+    .default("file:/data/app/app.sqlite")
+    .describe("App SQLite connection string"),
 });
 
 export const env = envSchema.parse({

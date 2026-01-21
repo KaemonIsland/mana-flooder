@@ -94,7 +94,9 @@ export default function MtgjsonSettingsPage() {
       </Card>
 
       <div className="flex flex-wrap gap-3">
-        <Button onClick={triggerImport}>Download + Decompress MTGJSON</Button>
+        <Button onClick={triggerImport}>
+          Download + Decompress + Index MTGJSON
+        </Button>
         <Button variant="outline" onClick={triggerReindex}>
           Rebuild Search Index
         </Button>
