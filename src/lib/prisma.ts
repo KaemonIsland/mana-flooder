@@ -1,25 +1,17 @@
 import { PrismaClient } from "@/generated/prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import Database from "better-sqlite3";
 import { env } from "@/lib/env";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-// Create the adapter for better-sqlite3
 const databaseUrl = process.env.DATABASE_URL ?? env.DATABASE_URL;
-if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = databaseUrl;
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL is missing");
 }
 
-const normalizedUrl = databaseUrl.startsWith("file:")
-  ? databaseUrl
-  : `file:${databaseUrl}`;
+const url = databaseUrl.startsWith("file:") ? databaseUrl : `file:${databaseUrl}`;
 
-// Extract the file path from the DATABASE_URL (format: file:/path/to/db)
-const dbPath = normalizedUrl.replace(/^file:/, "");
-
-const db = new Database(dbPath);
-const adapter = new PrismaBetterSqlite3(db);
+const adapter = new PrismaBetterSqlite3({ url });
 
 export const prisma =
   globalForPrisma.prisma ??

@@ -150,9 +150,14 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ results: enriched });
   } catch (error) {
+    console.error("SEARCH ROUTE FAILED:", error); // <-- keep stack
     return NextResponse.json(
-      { error: "Search index unavailable", details: String(error) },
-      { status: 503 },
+      {
+        error: "Search failed",
+        message: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 },
     );
   }
+  
 }
