@@ -24,6 +24,40 @@ export function getIdentifiersByUuid(uuid: string) {
   return mapIdentifiers(getIdentifierRow("cardIdentifiers", uuid));
 }
 
+export function getIdentifiersByUuids(uuids: string[]) {
+  if (!uuids.length) return new Map<string, IdentifierMap>();
+  const columns = getTableColumns("cardIdentifiers");
+  if (!columns.size || !columns.has("uuid")) {
+    return new Map<string, IdentifierMap>();
+  }
+
+  const db = getMtgjsonDb();
+  const params: Record<string, string> = {};
+  const placeholders = uuids.map((uuid, index) => {
+    const key = `uuid_${index}`;
+    params[key] = uuid;
+    return `@${key}`;
+  });
+
+  const rows = db
+    .prepare(
+      `SELECT * FROM cardIdentifiers WHERE uuid IN (${placeholders.join(", ")})`,
+    )
+    .all(params) as Array<Record<string, unknown>>;
+
+  const map = new Map<string, IdentifierMap>();
+  rows.forEach((row) => {
+    const uuid = row.uuid ? String(row.uuid) : null;
+    if (!uuid) return;
+    const identifiers = mapIdentifiers(row);
+    if (identifiers) {
+      map.set(uuid, identifiers);
+    }
+  });
+
+  return map;
+}
+
 export function getTokenIdentifiersByUuid(uuid: string) {
   return mapIdentifiers(getIdentifierRow("tokenIdentifiers", uuid));
 }
