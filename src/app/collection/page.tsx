@@ -121,6 +121,10 @@ export default function CollectionPage() {
         params.set("mvMax", String(manaRange[1]));
       }
       const response = await fetch(`/api/search?${params.toString()}`);
+      if (!response.ok) {
+        setLoading(false);
+        return;
+      }
       const data = await response.json();
       setResults(data.results ?? []);
       setLoading(false);
