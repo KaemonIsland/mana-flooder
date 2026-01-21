@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { CardDetailModal } from "@/components/cards/card-detail-modal";
@@ -56,22 +56,6 @@ function parseRange(minRaw: string | null, maxRaw: string | null) {
   ] as [number, number];
 }
 
-function matchesColorFilter(selected: string[], values: string[]) {
-  if (!selected.length) return true;
-  const normalized = values.map((value) => value.toUpperCase());
-  const wantsColorless = selected.includes("C");
-  const wantsMulticolor = selected.includes("M");
-  const picks = selected.filter((color) => !["C", "M"].includes(color));
-
-  let matches = false;
-  if (picks.length) {
-    matches = picks.every((color) => normalized.includes(color));
-  }
-  if (wantsColorless && normalized.length === 0) matches = true;
-  if (wantsMulticolor && normalized.length > 1) matches = true;
-  return matches;
-}
-
 function sortCards(cards: CardSummary[], sort: string) {
   const sorted = [...cards];
   switch (sort) {
@@ -113,12 +97,12 @@ function sortCards(cards: CardSummary[], sort: string) {
   return sorted;
 }
 
-export default function CollectionPage() {
+export default function SearchPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const [cards, setCards] = useState<CardSummary[]>([]);
+  const [results, setResults] = useState<CardSummary[]>([]);
   const [sets, setSets] = useState<SetSummary[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -133,7 +117,7 @@ export default function CollectionPage() {
   );
   const [rarity, setRarity] = useState(searchParams.get("rarity") ?? "");
   const [setCode, setSetCode] = useState(searchParams.get("set") ?? "");
-  const [sort, setSort] = useState(searchParams.get("sort") ?? "name");
+  const [sort, setSort] = useState(searchParams.get("sort") ?? "newest");
   const [manaRange, setManaRange] = useState<[number, number]>(
     parseRange(searchParams.get("mvMin"), searchParams.get("mvMax")),
   );
@@ -141,20 +125,9 @@ export default function CollectionPage() {
   const debouncedQuery = useDebouncedValue(query, 300);
   const debouncedOracle = useDebouncedValue(oracleText, 300);
   const debouncedType = useDebouncedValue(typeText, 300);
+  const hasSetDefaulted = useRef(false);
 
   useEffect(() => {
-    async function loadCards() {
-      setLoading(true);
-      const response = await fetch("/api/collection/owned");
-      if (!response.ok) {
-        setLoading(false);
-        return;
-      }
-      const data = (await response.json()) as { results: CardSummary[] };
-      setCards(data.results ?? []);
-      setLoading(false);
-    }
-
     async function loadSets() {
       const response = await fetch("/api/sets");
       if (!response.ok) return;
@@ -162,9 +135,18 @@ export default function CollectionPage() {
       setSets(data.sets ?? []);
     }
 
-    loadCards();
     loadSets();
   }, []);
+
+  useEffect(() => {
+    if (hasSetDefaulted.current) return;
+    if (sets.length) {
+      if (!setCode) {
+        setSetCode(sets[0].code);
+      }
+      hasSetDefaulted.current = true;
+    }
+  }, [setCode, sets]);
 
   useEffect(() => {
     const nextQuery = searchParams.get("q") ?? "";
@@ -174,7 +156,7 @@ export default function CollectionPage() {
     const nextIdentity = parseList(searchParams.get("identity"));
     const nextRarity = searchParams.get("rarity") ?? "";
     const nextSet = searchParams.get("set") ?? "";
-    const nextSort = searchParams.get("sort") ?? "name";
+    const nextSort = searchParams.get("sort") ?? "newest";
     const nextRange = parseRange(
       searchParams.get("mvMin"),
       searchParams.get("mvMax"),
@@ -215,7 +197,7 @@ export default function CollectionPage() {
     if (colorIdentity.length) params.set("identity", colorIdentity.join(","));
     if (rarity) params.set("rarity", rarity);
     if (setCode) params.set("set", setCode);
-    if (sort && sort !== "name") params.set("sort", sort);
+    if (sort && sort !== "newest") params.set("sort", sort);
     if (manaRange[0] !== 0) params.set("mvMin", String(manaRange[0]));
     if (manaRange[1] !== 12) params.set("mvMax", String(manaRange[1]));
 
@@ -241,56 +223,50 @@ export default function CollectionPage() {
     searchParams,
   ]);
 
-  const filteredCards = useMemo(() => {
-    const nameFilter = query.trim().toLowerCase();
-    const oracleFilter = oracleText.trim().toLowerCase();
-    const typeFilter = typeText.trim().toLowerCase();
+  const computedQuery = useMemo(() => {
+    const parts = [debouncedQuery];
+    if (debouncedOracle) parts.push(`o:"${debouncedOracle}"`);
+    if (debouncedType) parts.push(`t:"${debouncedType}"`);
+    return parts.filter(Boolean).join(" ").trim();
+  }, [debouncedQuery, debouncedOracle, debouncedType]);
 
-    return cards.filter((card) => {
-      if (nameFilter && !card.name.toLowerCase().includes(nameFilter)) {
-        return false;
+  useEffect(() => {
+    async function loadResults() {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (computedQuery) params.set("q", computedQuery);
+      if (colors.length) params.set("colors", colors.join(","));
+      if (colorIdentity.length) params.set("colorIdentity", colorIdentity.join(","));
+      if (rarity) params.set("rarity", rarity);
+      if (setCode) params.set("set", setCode);
+      if (manaRange[0] !== 0) params.set("mvMin", String(manaRange[0]));
+      if (manaRange[1] !== 12) params.set("mvMax", String(manaRange[1]));
+      params.set("sort", sort);
+
+      const response = await fetch(`/api/search?${params.toString()}`);
+      if (!response.ok) {
+        setLoading(false);
+        return;
       }
-      if (
-        oracleFilter &&
-        !card.text?.toLowerCase().includes(oracleFilter)
-      ) {
-        return false;
-      }
-      if (
-        typeFilter &&
-        !(card.typeLine ?? "").toLowerCase().includes(typeFilter)
-      ) {
-        return false;
-      }
-      if (!matchesColorFilter(colors, card.colors)) return false;
-      if (!matchesColorFilter(colorIdentity, card.colorIdentity)) return false;
-      if (rarity && (card.rarity ?? "").toLowerCase() !== rarity.toLowerCase()) {
-        return false;
-      }
-      if (setCode && (card.latestSetCode ?? "").toLowerCase() !== setCode.toLowerCase()) {
-        return false;
-      }
-      const manaValue = card.manaValue ?? 0;
-      if (manaValue < manaRange[0] || manaValue > manaRange[1]) {
-        return false;
-      }
-      return true;
-    });
+      const data = (await response.json()) as { results: CardSummary[] };
+      setResults(data.results ?? []);
+      setLoading(false);
+    }
+
+    loadResults();
   }, [
-    cards,
-    query,
-    oracleText,
-    typeText,
+    computedQuery,
     colors,
     colorIdentity,
     rarity,
     setCode,
     manaRange,
+    sort,
   ]);
 
   const visibleCards = useMemo(
-    () => sortCards(filteredCards, sort),
-    [filteredCards, sort],
+    () => sortCards(results, sort),
+    [results, sort],
   );
 
   const [modalKey, setModalKey] = useState<string | null>(null);
@@ -304,12 +280,11 @@ export default function CollectionPage() {
     });
     if (!response.ok) return;
 
-    setCards((prev) =>
-      prev.flatMap((entry) => {
+    setResults((prev) =>
+      prev.map((entry) => {
         if (entry.canonicalKey !== card.canonicalKey) return entry;
         const nextQty = Math.max(entry.foilQty, entry.qty + delta);
-        const next = { ...entry, qty: nextQty };
-        return next.qty > 0 ? next : [];
+        return { ...entry, qty: nextQty };
       }),
     );
   }
@@ -318,16 +293,16 @@ export default function CollectionPage() {
     canonicalKey: string,
     totals: { qty: number; foilQty: number },
   ) {
-    setCards((prev) =>
-      prev.flatMap((entry) => {
-        if (entry.canonicalKey !== canonicalKey) return entry;
-        const next = {
-          ...entry,
-          qty: totals.qty + totals.foilQty,
-          foilQty: totals.foilQty,
-        };
-        return next.qty > 0 ? next : [];
-      }),
+    setResults((prev) =>
+      prev.map((entry) =>
+        entry.canonicalKey === canonicalKey
+          ? {
+              ...entry,
+              qty: totals.qty + totals.foilQty,
+              foilQty: totals.foilQty,
+            }
+          : entry,
+      ),
     );
   }
 
@@ -350,8 +325,8 @@ export default function CollectionPage() {
     setColors([]);
     setColorIdentity([]);
     setRarity("");
-    setSetCode("");
-    setSort("name");
+    setSetCode(sets[0]?.code ?? "");
+    setSort("newest");
     setManaRange([0, 12]);
   }
 
@@ -456,7 +431,7 @@ export default function CollectionPage() {
           onValueChange={(value) => setSetCode(value === "all" ? "" : value)}
         >
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="All sets" />
+            <SelectValue placeholder="Newest set" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All sets</SelectItem>
@@ -475,9 +450,9 @@ export default function CollectionPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Collection</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
           <p className="text-sm text-white/60">
-            Owned cards grouped by canonical printings.
+            Advanced search across the newest sets by default.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -487,8 +462,8 @@ export default function CollectionPage() {
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="name">Name</SelectItem>
                 <SelectItem value="newest">Newest set</SelectItem>
+                <SelectItem value="name">Name</SelectItem>
                 <SelectItem value="oldest">Oldest set</SelectItem>
                 <SelectItem value="mana">Mana value</SelectItem>
                 <SelectItem value="owned">Owned count</SelectItem>
@@ -521,7 +496,7 @@ export default function CollectionPage() {
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search your collection"
+              placeholder="Search cards"
             />
           </div>
           <div className="space-y-2">
@@ -546,7 +521,7 @@ export default function CollectionPage() {
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="flex-1 space-y-4">
           {loading ? (
-            <p className="text-sm text-white/60">Loading collection...</p>
+            <p className="text-sm text-white/60">Searching...</p>
           ) : (
             <p className="text-sm text-white/60">
               Showing {visibleCards.length} cards

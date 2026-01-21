@@ -33,7 +33,7 @@ import {
 import CollectionActions from "./collection-actions";
 
 type PageProps = {
-  params: { canonicalKey: string };
+  params: Promise<{ canonicalKey: string }>;
 };
 
 function formatLegalityBadge(status: string | null) {
@@ -51,14 +51,15 @@ function formatLegalityBadge(status: string | null) {
 }
 
 export default async function CardPage({ params }: PageProps) {
-  const canonicalKey = decodeURIComponent(params.canonicalKey);
-  const representative = getRepresentativePrintingForCanonicalKey(canonicalKey);
+  const { canonicalKey } = await params;
+  const decodedKey = decodeURIComponent(canonicalKey);
+  const representative = getRepresentativePrintingForCanonicalKey(decodedKey);
   if (!representative) return notFound();
 
   const card = getCardByUuid(representative.representativeUuid);
   if (!card) return notFound();
 
-  const printingRefs = getAllPrintingsForCanonicalKey(canonicalKey);
+  const printingRefs = getAllPrintingsForCanonicalKey(decodedKey);
   const printingUuids = Array.from(
     new Set(
       (printingRefs.length
