@@ -129,6 +129,11 @@ export function searchCards(filters: SearchFilters, options: SearchOptions = {})
     }
   }
 
+  if (filters.manaCost) {
+    clauses.push("LOWER(COALESCE(s.manaCost, '')) LIKE @manaCost");
+    params.manaCost = `%${filters.manaCost.toLowerCase()}%`;
+  }
+
   if (filters.rarities?.length) {
     const rarityParams = filters.rarities.map((rarity, index) => {
       const key = `rarity_${index}`;
@@ -144,7 +149,22 @@ export function searchCards(filters: SearchFilters, options: SearchOptions = {})
       params[key] = code;
       return `@${key}`;
     });
-    clauses.push(`s.latestSetCode IN (${setParams.join(", ")})`);
+    clauses.push(`
+      EXISTS (
+        SELECT 1
+        FROM card_search_printings p
+        WHERE p.canonicalKey = s.canonicalKey
+          AND p.setCode IN (${setParams.join(", ")})
+      )
+    `);
+  }
+
+  if (filters.cardTypes?.length) {
+    filters.cardTypes.forEach((type, index) => {
+      const key = `cardType_${index}`;
+      params[key] = `%${type.toLowerCase()}%`;
+      clauses.push(`LOWER(COALESCE(s.type, '')) LIKE @${key}`);
+    });
   }
 
   const whereClause = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";

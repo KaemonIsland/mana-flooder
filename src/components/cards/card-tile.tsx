@@ -18,6 +18,9 @@ export type CardSummary = {
   colorIdentity: string[];
   latestSetCode: string | null;
   latestReleaseDate: string | null;
+  displaySetCode?: string | null;
+  displayReleaseDate?: string | null;
+  collectorNumber?: string | null;
   qty: number;
   foilQty: number;
   imageUrl: string | null;
@@ -66,7 +69,10 @@ function CardTile({ card, onOpen, onAdjustOwned, className }: CardTileProps) {
           )}
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
           <div className="absolute left-3 right-3 top-3 flex items-center justify-between gap-2">
-            <SetSymbol setCode={card.latestSetCode} rarity={card.rarity} />
+            <SetSymbol
+              setCode={card.displaySetCode ?? card.latestSetCode}
+              rarity={card.rarity}
+            />
             <ManaCost cost={card.manaCost} />
           </div>
           <div className="absolute bottom-3 left-3 right-3 space-y-1">
