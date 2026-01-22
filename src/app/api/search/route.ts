@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getSearchDb } from "@/lib/search/db";
 import { parseSearchQuery } from "@/lib/search/parser";
 import { searchCards } from "@/lib/search/search";
+import { resolveCardImage } from "@/lib/mtgjson/images";
+import { getIdentifiersByUuids } from "@/lib/mtgjson/queries/identifiers";
 
 function parseBoolean(value: string | null) {
   return value === "true" || value === "1";
@@ -36,6 +38,52 @@ function parseColorParam(
   if (options.colorless) colors.add("C");
   if (options.multicolor) colors.add("M");
   return Array.from(colors);
+}
+
+function sortResults<T extends { name: string; manaValue: number | null; latestReleaseDate: string | null; qty: number }>(
+  results: T[],
+  sort: string,
+) {
+  const sorted = [...results];
+  const compareRelease = (a: string | null, b: string | null) =>
+    (b ?? "").localeCompare(a ?? "");
+  const compareReleaseAsc = (a: string | null, b: string | null) =>
+    (a ?? "").localeCompare(b ?? "");
+
+  switch (sort) {
+    case "newest":
+      sorted.sort((a, b) =>
+        compareRelease(a.latestReleaseDate, b.latestReleaseDate) ||
+        a.name.localeCompare(b.name),
+      );
+      break;
+    case "oldest":
+      sorted.sort((a, b) =>
+        compareReleaseAsc(a.latestReleaseDate, b.latestReleaseDate) ||
+        a.name.localeCompare(b.name),
+      );
+      break;
+    case "mana":
+      sorted.sort((a, b) => {
+        const left = a.manaValue ?? Number.POSITIVE_INFINITY;
+        const right = b.manaValue ?? Number.POSITIVE_INFINITY;
+        if (left !== right) return left - right;
+        return a.name.localeCompare(b.name);
+      });
+      break;
+    case "owned":
+      sorted.sort((a, b) => {
+        if (b.qty !== a.qty) return b.qty - a.qty;
+        return a.name.localeCompare(b.name);
+      });
+      break;
+    case "name":
+    default:
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+      break;
+  }
+
+  return sorted;
 }
 
 export async function GET(request: Request) {
@@ -76,6 +124,7 @@ export async function GET(request: Request) {
 
   const limit = Number(searchParams.get("limit") ?? 50);
   const offset = Number(searchParams.get("offset") ?? 0);
+  const sort = searchParams.get("sort") ?? "name";
 
   try {
     const results = searchCards(filters, { limit, offset });
@@ -148,7 +197,18 @@ export async function GET(request: Request) {
       };
     });
 
-    return NextResponse.json({ results: enriched });
+    const identifiersMap = getIdentifiersByUuids(
+      enriched.map((entry) => entry.representativeUuid),
+    );
+
+    const withImages = enriched.map((entry) => ({
+      ...entry,
+      imageUrl: resolveCardImage(
+        identifiersMap.get(entry.representativeUuid) ?? null,
+      ),
+    }));
+
+    return NextResponse.json({ results: sortResults(withImages, sort) });
   } catch (error) {
     console.error("SEARCH ROUTE FAILED:", error); // <-- keep stack
     return NextResponse.json(

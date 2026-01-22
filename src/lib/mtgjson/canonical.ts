@@ -50,6 +50,7 @@ function getCanonicalKeyFromMtgjson(uuid: string): string | null {
   if (!cardColumns.size || !cardColumns.has("uuid")) return null;
 
   const identifierColumns = getTableColumns("cardIdentifiers");
+  const textColumn = pickColumn("cards", ["text", "originalText"]);
   const joinIdentifiers = identifierColumns.size
     ? "LEFT JOIN cardIdentifiers ci ON c.uuid = ci.uuid"
     : "";
@@ -175,6 +176,76 @@ export function getRepresentativePrintingForCanonicalKey(
     };
   } catch {
     return null;
+  }
+}
+
+export function getCanonicalPrintingsForKeys(
+  canonicalKeys: string[],
+): CanonicalPrinting[] {
+  if (!canonicalKeys.length) return [];
+  try {
+    const db = getSearchDb();
+    const params: Record<string, string> = {};
+    const placeholders = canonicalKeys.map((key, index) => {
+      const param = `key_${index}`;
+      params[param] = key;
+      return `@${param}`;
+    });
+
+    const rows = db
+      .prepare(
+        `
+          SELECT
+            canonicalKey,
+            representativeUuid,
+            name,
+            manaCost,
+            manaValue,
+            type,
+            text,
+            colors,
+            colorIdentity,
+            rarity,
+            latestSetCode,
+            latestReleaseDate,
+            keywords
+          FROM card_search
+          WHERE canonicalKey IN (${placeholders.join(", ")})
+        `,
+      )
+      .all(params) as Array<{
+      canonicalKey: string;
+      representativeUuid: string;
+      name: string;
+      manaCost?: string | null;
+      manaValue?: number | null;
+      type?: string | null;
+      text?: string | null;
+      colors?: string | null;
+      colorIdentity?: string | null;
+      rarity?: string | null;
+      latestSetCode?: string | null;
+      latestReleaseDate?: string | null;
+      keywords?: string | null;
+    }>;
+
+    return rows.map((row) => ({
+      canonicalKey: row.canonicalKey,
+      representativeUuid: row.representativeUuid,
+      name: row.name,
+      manaCost: row.manaCost ?? null,
+      manaValue: toNumber(row.manaValue),
+      typeLine: row.type ?? null,
+      text: row.text ?? null,
+      colors: normalizeStringArray(row.colors ?? null),
+      colorIdentity: normalizeStringArray(row.colorIdentity ?? null),
+      rarity: row.rarity ?? null,
+      latestSetCode: row.latestSetCode ?? null,
+      latestReleaseDate: row.latestReleaseDate ?? null,
+      keywords: normalizeStringArray(row.keywords ?? null),
+    }));
+  } catch {
+    return [];
   }
 }
 

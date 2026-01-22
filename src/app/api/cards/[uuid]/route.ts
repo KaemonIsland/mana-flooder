@@ -7,7 +7,7 @@ type RouteContext = {
 };
 
 export async function GET(_request: Request, context: RouteContext) {
-  const uuid = context.params.uuid;
+  const { uuid } = await context.params;
 
   try {
     const card = getCardByUuid(uuid);
