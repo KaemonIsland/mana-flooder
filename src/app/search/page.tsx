@@ -56,47 +56,6 @@ function parseRange(minRaw: string | null, maxRaw: string | null) {
   ] as [number, number];
 }
 
-function sortCards(cards: CardSummary[], sort: string) {
-  const sorted = [...cards];
-  switch (sort) {
-    case "newest":
-      sorted.sort((a, b) => {
-        const left = b.latestReleaseDate ?? "";
-        const right = a.latestReleaseDate ?? "";
-        if (left !== right) return left.localeCompare(right);
-        return a.name.localeCompare(b.name);
-      });
-      break;
-    case "oldest":
-      sorted.sort((a, b) => {
-        const left = a.latestReleaseDate ?? "";
-        const right = b.latestReleaseDate ?? "";
-        if (left !== right) return left.localeCompare(right);
-        return a.name.localeCompare(b.name);
-      });
-      break;
-    case "mana":
-      sorted.sort((a, b) => {
-        const left = a.manaValue ?? Number.POSITIVE_INFINITY;
-        const right = b.manaValue ?? Number.POSITIVE_INFINITY;
-        if (left !== right) return left - right;
-        return a.name.localeCompare(b.name);
-      });
-      break;
-    case "owned":
-      sorted.sort((a, b) => {
-        if (b.qty !== a.qty) return b.qty - a.qty;
-        return a.name.localeCompare(b.name);
-      });
-      break;
-    case "name":
-    default:
-      sorted.sort((a, b) => a.name.localeCompare(b.name));
-      break;
-  }
-  return sorted;
-}
-
 export default function SearchPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -175,18 +134,7 @@ export default function SearchPage() {
     if (nextIdentity.join(",") !== colorIdentity.join(",")) {
       setColorIdentity(nextIdentity);
     }
-  }, [
-    searchParams,
-    query,
-    oracleText,
-    typeText,
-    colors,
-    colorIdentity,
-    rarity,
-    setCode,
-    sort,
-    manaRange,
-  ]);
+  }, [searchParams]);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -220,7 +168,6 @@ export default function SearchPage() {
     manaRange,
     pathname,
     router,
-    searchParams,
   ]);
 
   const computedQuery = useMemo(() => {
