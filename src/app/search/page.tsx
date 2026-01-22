@@ -265,8 +265,8 @@ export default function SearchPage() {
   ]);
 
   const visibleCards = useMemo(
-    () => sortCards(results, sort),
-    [results, sort],
+    () => results,
+    [results],
   );
 
   const [modalKey, setModalKey] = useState<string | null>(null);
