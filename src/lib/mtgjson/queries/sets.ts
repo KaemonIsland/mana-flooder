@@ -6,6 +6,7 @@ export type MtgjsonSetSummary = {
   name: string;
   releaseDate: string | null;
   type: string | null;
+  symbol: string | null;
 };
 
 function selectColumn(
@@ -25,6 +26,13 @@ export function getSetSummaries(): MtgjsonSetSummary[] {
   if (!columns.size) return [];
 
   const codeColumn = pickColumn("sets", ["code", "setCode"]);
+  const symbolColumn = pickColumn("sets", [
+    "keyruneCode",
+    "symbol",
+    "iconSvgUri",
+    "iconSvgURI",
+    "iconSvg",
+  ]);
   if (!codeColumn) return [];
 
   const db = getMtgjsonDb();
@@ -35,7 +43,8 @@ export function getSetSummaries(): MtgjsonSetSummary[] {
           ${codeColumn} as code,
           ${selectColumn(columns, "name", "name", "sets")},
           ${selectColumn(columns, "releaseDate", "releaseDate", "sets")},
-          ${selectColumn(columns, "type", "type", "sets")}
+          ${selectColumn(columns, "type", "type", "sets")},
+          ${symbolColumn ? `sets.${symbolColumn} as symbol` : "NULL as symbol"}
         FROM sets
         ORDER BY releaseDate DESC
       `,
@@ -47,6 +56,7 @@ export function getSetSummaries(): MtgjsonSetSummary[] {
     name: (row.name as string | null) ?? (row.code as string),
     releaseDate: (row.releaseDate as string | null) ?? null,
     type: (row.type as string | null) ?? null,
+    symbol: (row.symbol as string | null) ?? null,
   }));
 }
 
@@ -54,6 +64,13 @@ export function getSetByCode(code: string): MtgjsonSetSummary | null {
   const columns = getTableColumns("sets");
   if (!columns.size) return null;
   const codeColumn = pickColumn("sets", ["code", "setCode"]);
+  const symbolColumn = pickColumn("sets", [
+    "keyruneCode",
+    "symbol",
+    "iconSvgUri",
+    "iconSvgURI",
+    "iconSvg",
+  ]);
   if (!codeColumn) return null;
 
   const db = getMtgjsonDb();
@@ -64,7 +81,8 @@ export function getSetByCode(code: string): MtgjsonSetSummary | null {
           ${codeColumn} as code,
           ${selectColumn(columns, "name", "name", "sets")},
           ${selectColumn(columns, "releaseDate", "releaseDate", "sets")},
-          ${selectColumn(columns, "type", "type", "sets")}
+          ${selectColumn(columns, "type", "type", "sets")},
+          ${symbolColumn ? `sets.${symbolColumn} as symbol` : "NULL as symbol"}
         FROM sets
         WHERE ${codeColumn} = ?
       `,
@@ -77,5 +95,6 @@ export function getSetByCode(code: string): MtgjsonSetSummary | null {
     name: (row.name as string | null) ?? (row.code as string),
     releaseDate: (row.releaseDate as string | null) ?? null,
     type: (row.type as string | null) ?? null,
+    symbol: (row.symbol as string | null) ?? null,
   };
 }

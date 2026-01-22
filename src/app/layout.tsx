@@ -21,6 +21,7 @@ export const metadata: Metadata = {
 const navItems = [
   { href: "/collection", label: "Collection" },
   { href: "/search", label: "Search" },
+  { href: "/sets", label: "Sets" },
   { href: "/decks", label: "Decks" },
   { href: "/settings/mtgjson", label: "MTGJSON Import/Status" },
   { href: "/about", label: "About" },
