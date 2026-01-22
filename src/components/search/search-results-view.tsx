@@ -347,8 +347,6 @@ function SearchResultsView({
     powerMax,
     toughnessMin,
     toughnessMax,
-    sortKey,
-    sortDir,
   ]);
 
   React.useEffect(() => {
