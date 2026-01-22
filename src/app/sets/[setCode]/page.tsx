@@ -6,12 +6,13 @@ import { Panel } from "@/components/ui/panel";
 import { getSetByCode } from "@/lib/mtgjson/queries/sets";
 
 type PageProps = {
-  params: { setCode: string };
+  params: Promise<{ setCode: string }>;
 };
 
-export default function SetDetailPage({ params }: PageProps) {
-  const setCode = decodeURIComponent(params.setCode).toUpperCase();
-  const set = getSetByCode(setCode);
+export default async function SetDetailPage({ params }: PageProps) {
+  const { setCode } = await params;
+  const decodedCode = decodeURIComponent(setCode).toUpperCase();
+  const set = getSetByCode(decodedCode);
 
   if (!set) {
     return notFound();

@@ -29,6 +29,13 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { COLOR_OPTIONS } from "@/lib/mtgjson/colors";
+import {
+  DEFAULT_SORT_DIR,
+  type SearchStateUpdate,
+  type SortKey,
+  getSearchState,
+  setSearchState,
+} from "@/lib/queryState";
 
 type SetSummary = {
   code: string;
@@ -53,40 +60,6 @@ type SearchResultsViewProps = {
   defaultSortKey?: SortKey;
 };
 
-type SortKey =
-  | "name"
-  | "releaseDate"
-  | "setNumber"
-  | "rarity"
-  | "color"
-  | "priceUsd"
-  | "priceTix"
-  | "priceEur"
-  | "manaValue"
-  | "power"
-  | "toughness"
-  | "artist"
-  | "edhrec"
-  | "setReview";
-
-type SortDir = "asc" | "desc";
-
-const DEFAULT_SORT_DIR: Record<SortKey, SortDir> = {
-  name: "asc",
-  releaseDate: "desc",
-  setNumber: "asc",
-  rarity: "asc",
-  color: "asc",
-  priceUsd: "desc",
-  priceTix: "desc",
-  priceEur: "desc",
-  manaValue: "asc",
-  power: "desc",
-  toughness: "desc",
-  artist: "asc",
-  edhrec: "asc",
-  setReview: "desc",
-};
 
 const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
   { key: "name", label: "Name" },
@@ -135,38 +108,11 @@ function useDebouncedValue<T>(value: T, delay = 300) {
   return debounced;
 }
 
-function parseList(value: string | null) {
-  if (!value) return [];
-  return value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
-function parseSortKey(raw: string | null): SortKey {
-  const normalized = raw ?? "";
-  const keys = SORT_OPTIONS.map((option) => option.key);
-  if (keys.includes(normalized as SortKey)) {
-    return normalized as SortKey;
+function toggleList(values: string[], value: string) {
+  if (values.includes(value)) {
+    return values.filter((item) => item !== value);
   }
-  return "name";
-}
-
-function parseSortDir(raw: string | null, sortKey: SortKey): SortDir {
-  if (raw === "asc" || raw === "desc") return raw;
-  return DEFAULT_SORT_DIR[sortKey] ?? "asc";
-}
-
-function toggleSelection(
-  value: string,
-  setState: (next: string[]) => void,
-  state: string[],
-) {
-  if (state.includes(value)) {
-    setState(state.filter((item) => item !== value));
-  } else {
-    setState([...state, value]);
-  }
+  return [...values, value];
 }
 
 function SearchResultsView({
@@ -179,82 +125,67 @@ function SearchResultsView({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const resolvedSetScope = setScope?.toUpperCase() ?? null;
+  const searchState = React.useMemo(
+    () =>
+      getSearchState(searchParams, {
+        defaultSortKey,
+        setScope: resolvedSetScope,
+      }),
+    [defaultSortKey, resolvedSetScope, searchParams],
+  );
 
   const [results, setResults] = React.useState<CardSummary[]>([]);
   const [sets, setSets] = React.useState<SetSummary[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [meta, setMeta] = React.useState<SearchMeta | null>(null);
 
-  const [query, setQuery] = React.useState(
-    searchParams.get("name") ?? searchParams.get("q") ?? "",
+  const [nameInput, setNameInput] = React.useState(searchState.name);
+  const [oracleInput, setOracleInput] = React.useState(searchState.oracleText);
+  const [typeInput, setTypeInput] = React.useState(searchState.typeLine);
+  const [manaCostInput, setManaCostInput] = React.useState(searchState.manaCost);
+  const [artistInput, setArtistInput] = React.useState(searchState.artist);
+  const [flavorInput, setFlavorInput] = React.useState(searchState.flavor);
+  const [mvMinInput, setMvMinInput] = React.useState(searchState.mvMin);
+  const [mvMaxInput, setMvMaxInput] = React.useState(searchState.mvMax);
+  const [powerMinInput, setPowerMinInput] = React.useState(searchState.powerMin);
+  const [powerMaxInput, setPowerMaxInput] = React.useState(searchState.powerMax);
+  const [toughnessMinInput, setToughnessMinInput] = React.useState(
+    searchState.toughnessMin,
   );
-  const [oracleText, setOracleText] = React.useState(
-    searchParams.get("oracleText") ?? searchParams.get("oracle") ?? "",
-  );
-  const [typeLine, setTypeLine] = React.useState(
-    searchParams.get("typeLine") ?? searchParams.get("type") ?? "",
-  );
-  const [manaCost, setManaCost] = React.useState(
-    searchParams.get("manaCost") ?? "",
-  );
-  const [artist, setArtist] = React.useState(searchParams.get("artist") ?? "");
-  const [flavor, setFlavor] = React.useState(searchParams.get("flavor") ?? "");
-
-  const [colors, setColors] = React.useState<string[]>(
-    parseList(searchParams.get("colors")).map((value) => value.toUpperCase()),
-  );
-  const [colorIdentity, setColorIdentity] = React.useState<string[]>(
-    parseList(searchParams.get("colorIdentity") ?? searchParams.get("identity")).map(
-      (value) => value.toUpperCase(),
-    ),
-  );
-  const [rarities, setRarities] = React.useState<string[]>(
-    parseList(searchParams.get("rarities") ?? searchParams.get("rarity")).map(
-      (value) => value.toLowerCase(),
-    ),
-  );
-  const [cardTypes, setCardTypes] = React.useState<string[]>(
-    parseList(searchParams.get("types")).map((value) => value.toLowerCase()),
-  );
-  const [setCodes, setSetCodes] = React.useState<string[]>(
-    resolvedSetScope
-      ? [resolvedSetScope]
-      : parseList(searchParams.get("sets") ?? searchParams.get("set")).map((value) =>
-          value.toUpperCase(),
-        ),
-  );
-
-  const [mvMin, setMvMin] = React.useState(searchParams.get("mvMin") ?? "");
-  const [mvMax, setMvMax] = React.useState(searchParams.get("mvMax") ?? "");
-  const [powerMin, setPowerMin] = React.useState(
-    searchParams.get("powerMin") ?? "",
-  );
-  const [powerMax, setPowerMax] = React.useState(
-    searchParams.get("powerMax") ?? "",
-  );
-  const [toughnessMin, setToughnessMin] = React.useState(
-    searchParams.get("toughnessMin") ?? "",
-  );
-  const [toughnessMax, setToughnessMax] = React.useState(
-    searchParams.get("toughnessMax") ?? "",
-  );
-
-  const [sortKey, setSortKey] = React.useState<SortKey>(() =>
-    parseSortKey(searchParams.get("sortKey") ?? defaultSortKey),
-  );
-  const [sortDir, setSortDir] = React.useState<SortDir>(() =>
-    parseSortDir(searchParams.get("sortDir"), sortKey),
+  const [toughnessMaxInput, setToughnessMaxInput] = React.useState(
+    searchState.toughnessMax,
   );
 
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [setSearch, setSetSearch] = React.useState("");
 
-  const debouncedQuery = useDebouncedValue(query, 300);
-  const debouncedOracle = useDebouncedValue(oracleText, 300);
-  const debouncedType = useDebouncedValue(typeLine, 300);
-  const debouncedManaCost = useDebouncedValue(manaCost, 300);
-  const debouncedArtist = useDebouncedValue(artist, 300);
-  const debouncedFlavor = useDebouncedValue(flavor, 300);
+  React.useEffect(() => {
+    setNameInput(searchState.name);
+    setOracleInput(searchState.oracleText);
+    setTypeInput(searchState.typeLine);
+    setManaCostInput(searchState.manaCost);
+    setArtistInput(searchState.artist);
+    setFlavorInput(searchState.flavor);
+    setMvMinInput(searchState.mvMin);
+    setMvMaxInput(searchState.mvMax);
+    setPowerMinInput(searchState.powerMin);
+    setPowerMaxInput(searchState.powerMax);
+    setToughnessMinInput(searchState.toughnessMin);
+    setToughnessMaxInput(searchState.toughnessMax);
+  }, [searchState]);
+
+  const debouncedName = useDebouncedValue(nameInput, 250);
+  const debouncedOracle = useDebouncedValue(oracleInput, 250);
+  const debouncedType = useDebouncedValue(typeInput, 250);
+  const debouncedManaCost = useDebouncedValue(manaCostInput, 250);
+  const debouncedArtist = useDebouncedValue(artistInput, 250);
+  const debouncedFlavor = useDebouncedValue(flavorInput, 250);
+  const debouncedMvMin = useDebouncedValue(mvMinInput, 250);
+  const debouncedMvMax = useDebouncedValue(mvMaxInput, 250);
+  const debouncedPowerMin = useDebouncedValue(powerMinInput, 250);
+  const debouncedPowerMax = useDebouncedValue(powerMaxInput, 250);
+  const debouncedToughnessMin = useDebouncedValue(toughnessMinInput, 250);
+  const debouncedToughnessMax = useDebouncedValue(toughnessMaxInput, 250);
 
   React.useEffect(() => {
     if (resolvedSetScope) return;
@@ -269,171 +200,100 @@ function SearchResultsView({
   }, [resolvedSetScope]);
 
   React.useEffect(() => {
-    const nextQuery = searchParams.get("name") ?? searchParams.get("q") ?? "";
-    const nextOracle = searchParams.get("oracleText") ?? searchParams.get("oracle") ?? "";
-    const nextType = searchParams.get("typeLine") ?? searchParams.get("type") ?? "";
-    const nextManaCost = searchParams.get("manaCost") ?? "";
-    const nextArtist = searchParams.get("artist") ?? "";
-    const nextFlavor = searchParams.get("flavor") ?? "";
-    const nextColors = parseList(searchParams.get("colors")).map((value) =>
-      value.toUpperCase(),
-    );
-    const nextIdentity = parseList(
-      searchParams.get("colorIdentity") ?? searchParams.get("identity"),
-    ).map((value) => value.toUpperCase());
-    const nextRarities = parseList(
-      searchParams.get("rarities") ?? searchParams.get("rarity"),
-    ).map((value) => value.toLowerCase());
-    const nextTypes = parseList(searchParams.get("types")).map((value) =>
-      value.toLowerCase(),
-    );
-    const nextSets = parseList(searchParams.get("sets") ?? searchParams.get("set")).map(
-      (value) => value.toUpperCase(),
-    );
-    const nextMvMin = searchParams.get("mvMin") ?? "";
-    const nextMvMax = searchParams.get("mvMax") ?? "";
-    const nextPowerMin = searchParams.get("powerMin") ?? "";
-    const nextPowerMax = searchParams.get("powerMax") ?? "";
-    const nextToughnessMin = searchParams.get("toughnessMin") ?? "";
-    const nextToughnessMax = searchParams.get("toughnessMax") ?? "";
-    const nextSortKey = parseSortKey(searchParams.get("sortKey") ?? defaultSortKey);
-    const nextSortDir = parseSortDir(searchParams.get("sortDir"), nextSortKey);
+    const update: SearchStateUpdate = {};
+    if (debouncedName !== searchState.name) update.name = debouncedName;
+    if (debouncedOracle !== searchState.oracleText) {
+      update.oracleText = debouncedOracle;
+    }
+    if (debouncedType !== searchState.typeLine) update.typeLine = debouncedType;
+    if (debouncedManaCost !== searchState.manaCost) {
+      update.manaCost = debouncedManaCost;
+    }
+    if (debouncedArtist !== searchState.artist) update.artist = debouncedArtist;
+    if (debouncedFlavor !== searchState.flavor) update.flavor = debouncedFlavor;
+    if (debouncedMvMin !== searchState.mvMin) update.mvMin = debouncedMvMin;
+    if (debouncedMvMax !== searchState.mvMax) update.mvMax = debouncedMvMax;
+    if (debouncedPowerMin !== searchState.powerMin) {
+      update.powerMin = debouncedPowerMin;
+    }
+    if (debouncedPowerMax !== searchState.powerMax) {
+      update.powerMax = debouncedPowerMax;
+    }
+    if (debouncedToughnessMin !== searchState.toughnessMin) {
+      update.toughnessMin = debouncedToughnessMin;
+    }
+    if (debouncedToughnessMax !== searchState.toughnessMax) {
+      update.toughnessMax = debouncedToughnessMax;
+    }
 
-    if (nextQuery !== query) setQuery(nextQuery);
-    if (nextOracle !== oracleText) setOracleText(nextOracle);
-    if (nextType !== typeLine) setTypeLine(nextType);
-    if (nextManaCost !== manaCost) setManaCost(nextManaCost);
-    if (nextArtist !== artist) setArtist(nextArtist);
-    if (nextFlavor !== flavor) setFlavor(nextFlavor);
-    if (nextColors.join(",") !== colors.join(",")) setColors(nextColors);
-    if (nextIdentity.join(",") !== colorIdentity.join(",")) {
-      setColorIdentity(nextIdentity);
-    }
-    if (nextRarities.join(",") !== rarities.join(",")) setRarities(nextRarities);
-    if (nextTypes.join(",") !== cardTypes.join(",")) setCardTypes(nextTypes);
-    if (resolvedSetScope) {
-      if (setCodes.join(",") !== [resolvedSetScope].join(",")) {
-        setSetCodes([resolvedSetScope]);
-      }
-    } else if (nextSets.join(",") !== setCodes.join(",")) {
-      setSetCodes(nextSets);
-    }
-    if (nextMvMin !== mvMin) setMvMin(nextMvMin);
-    if (nextMvMax !== mvMax) setMvMax(nextMvMax);
-    if (nextPowerMin !== powerMin) setPowerMin(nextPowerMin);
-    if (nextPowerMax !== powerMax) setPowerMax(nextPowerMax);
-    if (nextToughnessMin !== toughnessMin) setToughnessMin(nextToughnessMin);
-    if (nextToughnessMax !== toughnessMax) setToughnessMax(nextToughnessMax);
-    if (nextSortKey !== sortKey) setSortKey(nextSortKey);
-    if (nextSortDir !== sortDir) setSortDir(nextSortDir);
+    if (Object.keys(update).length === 0) return;
+    setSearchState(router, pathname, searchParams, update, {
+      defaultSortKey,
+      setScope: resolvedSetScope,
+    });
   }, [
-    searchParams,
-    defaultSortKey,
-    resolvedSetScope,
-    query,
-    oracleText,
-    typeLine,
-    manaCost,
-    artist,
-    flavor,
-    colors,
-    colorIdentity,
-    rarities,
-    cardTypes,
-    setCodes,
-    mvMin,
-    mvMax,
-    powerMin,
-    powerMax,
-    toughnessMin,
-    toughnessMax,
-    sortKey,
-    sortDir,
-  ]);
-
-  React.useEffect(() => {
-    const params = new URLSearchParams();
-    if (debouncedQuery) params.set("name", debouncedQuery);
-    if (debouncedOracle) params.set("oracleText", debouncedOracle);
-    if (debouncedType) params.set("typeLine", debouncedType);
-    if (debouncedManaCost) params.set("manaCost", debouncedManaCost);
-    if (debouncedArtist) params.set("artist", debouncedArtist);
-    if (debouncedFlavor) params.set("flavor", debouncedFlavor);
-    if (colors.length) params.set("colors", colors.join(","));
-    if (colorIdentity.length) params.set("colorIdentity", colorIdentity.join(","));
-    if (rarities.length) params.set("rarities", rarities.join(","));
-    if (cardTypes.length) params.set("types", cardTypes.join(","));
-    if (!resolvedSetScope && setCodes.length) params.set("sets", setCodes.join(","));
-    if (mvMin) params.set("mvMin", mvMin);
-    if (mvMax) params.set("mvMax", mvMax);
-    if (powerMin) params.set("powerMin", powerMin);
-    if (powerMax) params.set("powerMax", powerMax);
-    if (toughnessMin) params.set("toughnessMin", toughnessMin);
-    if (toughnessMax) params.set("toughnessMax", toughnessMax);
-
-    if (sortKey !== defaultSortKey) params.set("sortKey", sortKey);
-    if (sortDir !== DEFAULT_SORT_DIR[sortKey]) params.set("sortDir", sortDir);
-
-    const next = params.toString();
-    const current = searchParams.toString();
-    if (next !== current) {
-      router.replace(next ? `${pathname}?${next}` : pathname, {
-        scroll: false,
-      });
-    }
-  }, [
-    debouncedQuery,
-    debouncedOracle,
-    debouncedType,
-    debouncedManaCost,
     debouncedArtist,
     debouncedFlavor,
-    colors,
-    colorIdentity,
-    rarities,
-    cardTypes,
-    setCodes,
-    mvMin,
-    mvMax,
-    powerMin,
-    powerMax,
-    toughnessMin,
-    toughnessMax,
-    sortKey,
-    sortDir,
+    debouncedManaCost,
+    debouncedMvMax,
+    debouncedMvMin,
+    debouncedName,
+    debouncedOracle,
+    debouncedPowerMax,
+    debouncedPowerMin,
+    debouncedToughnessMax,
+    debouncedToughnessMin,
+    debouncedType,
     defaultSortKey,
-    resolvedSetScope,
     pathname,
+    resolvedSetScope,
     router,
     searchParams,
+    searchState.artist,
+    searchState.flavor,
+    searchState.manaCost,
+    searchState.mvMax,
+    searchState.mvMin,
+    searchState.name,
+    searchState.oracleText,
+    searchState.powerMax,
+    searchState.powerMin,
+    searchState.toughnessMax,
+    searchState.toughnessMin,
+    searchState.typeLine,
   ]);
 
   React.useEffect(() => {
     async function loadResults() {
       setLoading(true);
       const params = new URLSearchParams();
-      if (debouncedQuery) params.set("name", debouncedQuery);
-      if (debouncedOracle) params.set("oracleText", debouncedOracle);
-      if (debouncedType) params.set("typeLine", debouncedType);
-      if (debouncedManaCost) params.set("manaCost", debouncedManaCost);
-      if (debouncedArtist) params.set("artist", debouncedArtist);
-      if (debouncedFlavor) params.set("flavor", debouncedFlavor);
-      if (colors.length) params.set("colors", colors.join(","));
-      if (colorIdentity.length) params.set("colorIdentity", colorIdentity.join(","));
-      if (rarities.length) params.set("rarities", rarities.join(","));
-      if (cardTypes.length) params.set("types", cardTypes.join(","));
+      if (searchState.name) params.set("name", searchState.name);
+      if (searchState.oracleText) params.set("oracleText", searchState.oracleText);
+      if (searchState.typeLine) params.set("typeLine", searchState.typeLine);
+      if (searchState.manaCost) params.set("manaCost", searchState.manaCost);
+      if (searchState.artist) params.set("artist", searchState.artist);
+      if (searchState.flavor) params.set("flavor", searchState.flavor);
+      if (searchState.colors.length)
+        params.set("colors", searchState.colors.join(","));
+      if (searchState.colorIdentity.length)
+        params.set("colorIdentity", searchState.colorIdentity.join(","));
+      if (searchState.rarities.length)
+        params.set("rarities", searchState.rarities.join(","));
+      if (searchState.cardTypes.length)
+        params.set("types", searchState.cardTypes.join(","));
+      if (searchState.setCodes.length)
+        params.set("sets", searchState.setCodes.join(","));
 
-      const effectiveSets = resolvedSetScope ? [resolvedSetScope] : setCodes;
-      if (effectiveSets.length) params.set("sets", effectiveSets.join(","));
-
-      if (mvMin) params.set("mvMin", mvMin);
-      if (mvMax) params.set("mvMax", mvMax);
-      if (powerMin) params.set("powerMin", powerMin);
-      if (powerMax) params.set("powerMax", powerMax);
-      if (toughnessMin) params.set("toughnessMin", toughnessMin);
-      if (toughnessMax) params.set("toughnessMax", toughnessMax);
-      if (sortKey) params.set("sortKey", sortKey);
-      if (sortDir) params.set("sortDir", sortDir);
+      if (searchState.mvMin) params.set("mvMin", searchState.mvMin);
+      if (searchState.mvMax) params.set("mvMax", searchState.mvMax);
+      if (searchState.powerMin) params.set("powerMin", searchState.powerMin);
+      if (searchState.powerMax) params.set("powerMax", searchState.powerMax);
+      if (searchState.toughnessMin)
+        params.set("toughnessMin", searchState.toughnessMin);
+      if (searchState.toughnessMax)
+        params.set("toughnessMax", searchState.toughnessMax);
+      if (searchState.sortKey) params.set("sortKey", searchState.sortKey);
+      if (searchState.sortDir) params.set("sortDir", searchState.sortDir);
 
       const response = await fetch(`/api/search?${params.toString()}`);
       if (!response.ok) {
@@ -451,26 +311,7 @@ function SearchResultsView({
 
     loadResults();
   }, [
-    debouncedQuery,
-    debouncedOracle,
-    debouncedType,
-    debouncedManaCost,
-    debouncedArtist,
-    debouncedFlavor,
-    colors,
-    colorIdentity,
-    rarities,
-    cardTypes,
-    setCodes,
-    mvMin,
-    mvMax,
-    powerMin,
-    powerMax,
-    toughnessMin,
-    toughnessMax,
-    sortKey,
-    sortDir,
-    resolvedSetScope,
+    searchState,
   ]);
 
   const [modalKey, setModalKey] = React.useState<string | null>(null);
@@ -511,26 +352,45 @@ function SearchResultsView({
   }
 
   function clearFilters() {
-    setQuery("");
-    setOracleText("");
-    setTypeLine("");
-    setManaCost("");
-    setArtist("");
-    setFlavor("");
-    setColors([]);
-    setColorIdentity([]);
-    setRarities([]);
-    setCardTypes([]);
-    setMvMin("");
-    setMvMax("");
-    setPowerMin("");
-    setPowerMax("");
-    setToughnessMin("");
-    setToughnessMax("");
-    setSortKey(defaultSortKey);
-    setSortDir(DEFAULT_SORT_DIR[defaultSortKey]);
+    setNameInput("");
+    setOracleInput("");
+    setTypeInput("");
+    setManaCostInput("");
+    setArtistInput("");
+    setFlavorInput("");
+    setMvMinInput("");
+    setMvMaxInput("");
+    setPowerMinInput("");
+    setPowerMaxInput("");
+    setToughnessMinInput("");
+    setToughnessMaxInput("");
+    const update: SearchStateUpdate = {
+      name: "",
+      oracleText: "",
+      typeLine: "",
+      manaCost: "",
+      artist: "",
+      flavor: "",
+      colors: [],
+      colorIdentity: [],
+      rarities: [],
+      cardTypes: [],
+      mvMin: "",
+      mvMax: "",
+      powerMin: "",
+      powerMax: "",
+      toughnessMin: "",
+      toughnessMax: "",
+      sortKey: defaultSortKey,
+      sortDir: DEFAULT_SORT_DIR[defaultSortKey],
+    };
+    if (!resolvedSetScope) update.setCodes = [];
+
+    setSearchState(router, pathname, searchParams, update, {
+      defaultSortKey,
+      setScope: resolvedSetScope,
+    });
     setSetSearch("");
-    if (!resolvedSetScope) setSetCodes([]);
   }
 
   const filteredSets = React.useMemo(() => {
@@ -590,22 +450,34 @@ function SearchResultsView({
           Colors
         </Label>
         <div className="flex flex-wrap gap-2">
-          {COLOR_OPTIONS.map((color) => (
-            <button
-              key={`colors-${color.key}`}
-              type="button"
-              aria-pressed={colors.includes(color.key)}
-              className={cn(
-                "flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/70 transition-all duration-200 hover:bg-white/10 hover:text-white",
-                colors.includes(color.key) &&
-                  "border-violet-400/40 bg-violet-500/20 text-white ring-1 ring-violet-400/40",
-              )}
-              onClick={() => toggleSelection(color.key, setColors, colors)}
-            >
-              <ManaSymbol symbol={color.key} label={color.name} />
-              <span>{color.key}</span>
-            </button>
-          ))}
+          {COLOR_OPTIONS.map((color) => {
+            const selected = searchState.colors.includes(color.key);
+            return (
+              <button
+                key={`colors-${color.key}`}
+                type="button"
+                aria-pressed={selected}
+                className={cn(
+                  "flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/70 transition-all duration-200 hover:bg-white/10 hover:text-white",
+                  selected &&
+                    "border-violet-400/40 bg-violet-500/20 text-white ring-1 ring-violet-400/40",
+                )}
+                onClick={() => {
+                  const nextColors = toggleList(searchState.colors, color.key);
+                  setSearchState(
+                    router,
+                    pathname,
+                    searchParams,
+                    { colors: nextColors },
+                    { defaultSortKey, setScope: resolvedSetScope },
+                  );
+                }}
+              >
+                <ManaSymbol symbol={color.key} label={color.name} />
+                <span>{color.key}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -614,24 +486,37 @@ function SearchResultsView({
           Color Identity
         </Label>
         <div className="flex flex-wrap gap-2">
-          {COLOR_OPTIONS.map((color) => (
-            <button
-              key={`identity-${color.key}`}
-              type="button"
-              aria-pressed={colorIdentity.includes(color.key)}
-              className={cn(
-                "flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/70 transition-all duration-200 hover:bg-white/10 hover:text-white",
-                colorIdentity.includes(color.key) &&
-                  "border-violet-400/40 bg-violet-500/20 text-white ring-1 ring-violet-400/40",
-              )}
-              onClick={() =>
-                toggleSelection(color.key, setColorIdentity, colorIdentity)
-              }
-            >
-              <ManaSymbol symbol={color.key} label={color.name} />
-              <span>{color.key}</span>
-            </button>
-          ))}
+          {COLOR_OPTIONS.map((color) => {
+            const selected = searchState.colorIdentity.includes(color.key);
+            return (
+              <button
+                key={`identity-${color.key}`}
+                type="button"
+                aria-pressed={selected}
+                className={cn(
+                  "flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/70 transition-all duration-200 hover:bg-white/10 hover:text-white",
+                  selected &&
+                    "border-violet-400/40 bg-violet-500/20 text-white ring-1 ring-violet-400/40",
+                )}
+                onClick={() => {
+                  const nextIdentity = toggleList(
+                    searchState.colorIdentity,
+                    color.key,
+                  );
+                  setSearchState(
+                    router,
+                    pathname,
+                    searchParams,
+                    { colorIdentity: nextIdentity },
+                    { defaultSortKey, setScope: resolvedSetScope },
+                  );
+                }}
+              >
+                <ManaSymbol symbol={color.key} label={color.name} />
+                <span>{color.key}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -640,17 +525,30 @@ function SearchResultsView({
           Rarity
         </Label>
         <div className="flex flex-wrap gap-2">
-          {RARITY_OPTIONS.map((option) => (
-            <Chip
-              key={`rarity-${option.value}`}
-              selected={rarities.includes(option.value)}
-              onClick={() =>
-                toggleSelection(option.value, setRarities, rarities)
-              }
-            >
-              {option.label}
-            </Chip>
-          ))}
+          {RARITY_OPTIONS.map((option) => {
+            const selected = searchState.rarities.includes(option.value);
+            return (
+              <Chip
+                key={`rarity-${option.value}`}
+                selected={selected}
+                onClick={() => {
+                  const nextRarities = toggleList(
+                    searchState.rarities,
+                    option.value,
+                  );
+                  setSearchState(
+                    router,
+                    pathname,
+                    searchParams,
+                    { rarities: nextRarities },
+                    { defaultSortKey, setScope: resolvedSetScope },
+                  );
+                }}
+              >
+                {option.label}
+              </Chip>
+            );
+          })}
         </div>
       </div>
 
@@ -661,14 +559,14 @@ function SearchResultsView({
         <div className="grid grid-cols-2 gap-2">
           <Input
             type="number"
-            value={mvMin}
-            onChange={(event) => setMvMin(event.target.value)}
+            value={mvMinInput}
+            onChange={(event) => setMvMinInput(event.target.value)}
             placeholder="Min"
           />
           <Input
             type="number"
-            value={mvMax}
-            onChange={(event) => setMvMax(event.target.value)}
+            value={mvMaxInput}
+            onChange={(event) => setMvMaxInput(event.target.value)}
             placeholder="Max"
           />
         </div>
@@ -679,17 +577,28 @@ function SearchResultsView({
           Card Types
         </Label>
         <div className="flex flex-wrap gap-2">
-          {CARD_TYPES.map((type) => (
-            <Chip
-              key={`type-${type}`}
-              selected={cardTypes.includes(type.toLowerCase())}
-              onClick={() =>
-                toggleSelection(type.toLowerCase(), setCardTypes, cardTypes)
-              }
-            >
-              {type}
-            </Chip>
-          ))}
+          {CARD_TYPES.map((type) => {
+            const value = type.toLowerCase();
+            const selected = searchState.cardTypes.includes(value);
+            return (
+              <Chip
+                key={`type-${type}`}
+                selected={selected}
+                onClick={() => {
+                  const nextTypes = toggleList(searchState.cardTypes, value);
+                  setSearchState(
+                    router,
+                    pathname,
+                    searchParams,
+                    { cardTypes: nextTypes },
+                    { defaultSortKey, setScope: resolvedSetScope },
+                  );
+                }}
+              >
+                {type}
+              </Chip>
+            );
+          })}
         </div>
       </div>
 
@@ -700,14 +609,14 @@ function SearchResultsView({
         <div className="grid grid-cols-2 gap-2">
           <Input
             type="number"
-            value={powerMin}
-            onChange={(event) => setPowerMin(event.target.value)}
+            value={powerMinInput}
+            onChange={(event) => setPowerMinInput(event.target.value)}
             placeholder="Min"
           />
           <Input
             type="number"
-            value={powerMax}
-            onChange={(event) => setPowerMax(event.target.value)}
+            value={powerMaxInput}
+            onChange={(event) => setPowerMaxInput(event.target.value)}
             placeholder="Max"
           />
         </div>
@@ -720,14 +629,14 @@ function SearchResultsView({
         <div className="grid grid-cols-2 gap-2">
           <Input
             type="number"
-            value={toughnessMin}
-            onChange={(event) => setToughnessMin(event.target.value)}
+            value={toughnessMinInput}
+            onChange={(event) => setToughnessMinInput(event.target.value)}
             placeholder="Min"
           />
           <Input
             type="number"
-            value={toughnessMax}
-            onChange={(event) => setToughnessMax(event.target.value)}
+            value={toughnessMaxInput}
+            onChange={(event) => setToughnessMaxInput(event.target.value)}
             placeholder="Max"
           />
         </div>
@@ -740,8 +649,8 @@ function SearchResultsView({
       <div className="space-y-2">
         <Label>Card Name</Label>
         <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          value={nameInput}
+          onChange={(event) => setNameInput(event.target.value)}
           placeholder="Search by name"
         />
       </div>
@@ -750,16 +659,16 @@ function SearchResultsView({
         <div className="space-y-2">
           <Label>Text</Label>
           <Input
-            value={oracleText}
-            onChange={(event) => setOracleText(event.target.value)}
+            value={oracleInput}
+            onChange={(event) => setOracleInput(event.target.value)}
             placeholder="Oracle text contains"
           />
         </div>
         <div className="space-y-2">
           <Label>Type Line</Label>
           <Input
-            value={typeLine}
-            onChange={(event) => setTypeLine(event.target.value)}
+            value={typeInput}
+            onChange={(event) => setTypeInput(event.target.value)}
             placeholder="Creature"
           />
         </div>
@@ -768,54 +677,79 @@ function SearchResultsView({
       <div className="space-y-2">
         <Label>Colors</Label>
         <div className="flex flex-wrap gap-2">
-          {COLOR_OPTIONS.map((color) => (
-            <button
-              key={`advanced-color-${color.key}`}
-              type="button"
-              aria-pressed={colors.includes(color.key)}
-              className={cn(
-                "flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/70 transition-all duration-200 hover:bg-white/10 hover:text-white",
-                colors.includes(color.key) &&
-                  "border-violet-400/40 bg-violet-500/20 text-white ring-1 ring-violet-400/40",
-              )}
-              onClick={() => toggleSelection(color.key, setColors, colors)}
-            >
-              <ManaSymbol symbol={color.key} label={color.name} />
-              <span>{color.key}</span>
-            </button>
-          ))}
+          {COLOR_OPTIONS.map((color) => {
+            const selected = searchState.colors.includes(color.key);
+            return (
+              <button
+                key={`advanced-color-${color.key}`}
+                type="button"
+                aria-pressed={selected}
+                className={cn(
+                  "flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/70 transition-all duration-200 hover:bg-white/10 hover:text-white",
+                  selected &&
+                    "border-violet-400/40 bg-violet-500/20 text-white ring-1 ring-violet-400/40",
+                )}
+                onClick={() => {
+                  const nextColors = toggleList(searchState.colors, color.key);
+                  setSearchState(
+                    router,
+                    pathname,
+                    searchParams,
+                    { colors: nextColors },
+                    { defaultSortKey, setScope: resolvedSetScope },
+                  );
+                }}
+              >
+                <ManaSymbol symbol={color.key} label={color.name} />
+                <span>{color.key}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
       <div className="space-y-2">
         <Label>Commander / Color Identity</Label>
         <div className="flex flex-wrap gap-2">
-          {COLOR_OPTIONS.map((color) => (
-            <button
-              key={`advanced-identity-${color.key}`}
-              type="button"
-              aria-pressed={colorIdentity.includes(color.key)}
-              className={cn(
-                "flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/70 transition-all duration-200 hover:bg-white/10 hover:text-white",
-                colorIdentity.includes(color.key) &&
-                  "border-violet-400/40 bg-violet-500/20 text-white ring-1 ring-violet-400/40",
-              )}
-              onClick={() =>
-                toggleSelection(color.key, setColorIdentity, colorIdentity)
-              }
-            >
-              <ManaSymbol symbol={color.key} label={color.name} />
-              <span>{color.key}</span>
-            </button>
-          ))}
+          {COLOR_OPTIONS.map((color) => {
+            const selected = searchState.colorIdentity.includes(color.key);
+            return (
+              <button
+                key={`advanced-identity-${color.key}`}
+                type="button"
+                aria-pressed={selected}
+                className={cn(
+                  "flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/70 transition-all duration-200 hover:bg-white/10 hover:text-white",
+                  selected &&
+                    "border-violet-400/40 bg-violet-500/20 text-white ring-1 ring-violet-400/40",
+                )}
+                onClick={() => {
+                  const nextIdentity = toggleList(
+                    searchState.colorIdentity,
+                    color.key,
+                  );
+                  setSearchState(
+                    router,
+                    pathname,
+                    searchParams,
+                    { colorIdentity: nextIdentity },
+                    { defaultSortKey, setScope: resolvedSetScope },
+                  );
+                }}
+              >
+                <ManaSymbol symbol={color.key} label={color.name} />
+                <span>{color.key}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
       <div className="space-y-2">
         <Label>Mana Cost</Label>
         <Input
-          value={manaCost}
-          onChange={(event) => setManaCost(event.target.value)}
+          value={manaCostInput}
+          onChange={(event) => setManaCostInput(event.target.value)}
           placeholder="{1}{W}{U}"
         />
       </div>
@@ -826,14 +760,14 @@ function SearchResultsView({
           <div className="grid grid-cols-2 gap-2">
             <Input
               type="number"
-              value={mvMin}
-              onChange={(event) => setMvMin(event.target.value)}
+              value={mvMinInput}
+              onChange={(event) => setMvMinInput(event.target.value)}
               placeholder="Min"
             />
             <Input
               type="number"
-              value={mvMax}
-              onChange={(event) => setMvMax(event.target.value)}
+              value={mvMaxInput}
+              onChange={(event) => setMvMaxInput(event.target.value)}
               placeholder="Max"
             />
           </div>
@@ -843,14 +777,14 @@ function SearchResultsView({
           <div className="grid grid-cols-2 gap-2">
             <Input
               type="number"
-              value={powerMin}
-              onChange={(event) => setPowerMin(event.target.value)}
+              value={powerMinInput}
+              onChange={(event) => setPowerMinInput(event.target.value)}
               placeholder="Min"
             />
             <Input
               type="number"
-              value={powerMax}
-              onChange={(event) => setPowerMax(event.target.value)}
+              value={powerMaxInput}
+              onChange={(event) => setPowerMaxInput(event.target.value)}
               placeholder="Max"
             />
           </div>
@@ -860,14 +794,14 @@ function SearchResultsView({
           <div className="grid grid-cols-2 gap-2">
             <Input
               type="number"
-              value={toughnessMin}
-              onChange={(event) => setToughnessMin(event.target.value)}
+              value={toughnessMinInput}
+              onChange={(event) => setToughnessMinInput(event.target.value)}
               placeholder="Min"
             />
             <Input
               type="number"
-              value={toughnessMax}
-              onChange={(event) => setToughnessMax(event.target.value)}
+              value={toughnessMaxInput}
+              onChange={(event) => setToughnessMaxInput(event.target.value)}
               placeholder="Max"
             />
           </div>
@@ -884,7 +818,7 @@ function SearchResultsView({
           />
           <div className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-white/10 bg-white/5 p-2">
             {filteredSets.map((set) => {
-              const selected = setCodes.includes(set.code);
+              const selected = searchState.setCodes.includes(set.code);
               return (
                 <label
                   key={set.code}
@@ -896,9 +830,19 @@ function SearchResultsView({
                   <div className="flex items-center gap-2">
                     <Checkbox
                       checked={selected}
-                      onCheckedChange={() =>
-                        toggleSelection(set.code, setSetCodes, setCodes)
-                      }
+                      onCheckedChange={() => {
+                        const nextSets = toggleList(
+                          searchState.setCodes,
+                          set.code,
+                        );
+                        setSearchState(
+                          router,
+                          pathname,
+                          searchParams,
+                          { setCodes: nextSets },
+                          { defaultSortKey, setScope: resolvedSetScope },
+                        );
+                      }}
                     />
                     <span className="font-medium text-white">
                       {set.code}
@@ -923,17 +867,30 @@ function SearchResultsView({
       <div className="space-y-2">
         <Label>Rarity</Label>
         <div className="flex flex-wrap gap-2">
-          {RARITY_OPTIONS.map((option) => (
-            <Chip
-              key={`advanced-rarity-${option.value}`}
-              selected={rarities.includes(option.value)}
-              onClick={() =>
-                toggleSelection(option.value, setRarities, rarities)
-              }
-            >
-              {option.label}
-            </Chip>
-          ))}
+          {RARITY_OPTIONS.map((option) => {
+            const selected = searchState.rarities.includes(option.value);
+            return (
+              <Chip
+                key={`advanced-rarity-${option.value}`}
+                selected={selected}
+                onClick={() => {
+                  const nextRarities = toggleList(
+                    searchState.rarities,
+                    option.value,
+                  );
+                  setSearchState(
+                    router,
+                    pathname,
+                    searchParams,
+                    { rarities: nextRarities },
+                    { defaultSortKey, setScope: resolvedSetScope },
+                  );
+                }}
+              >
+                {option.label}
+              </Chip>
+            );
+          })}
         </div>
       </div>
 
@@ -941,16 +898,16 @@ function SearchResultsView({
         <div className="space-y-2">
           <Label>Artist Name</Label>
           <Input
-            value={artist}
-            onChange={(event) => setArtist(event.target.value)}
+            value={artistInput}
+            onChange={(event) => setArtistInput(event.target.value)}
             placeholder="Rebecca Guay"
           />
         </div>
         <div className="space-y-2">
           <Label>Flavor Text</Label>
           <Input
-            value={flavor}
-            onChange={(event) => setFlavor(event.target.value)}
+            value={flavorInput}
+            onChange={(event) => setFlavorInput(event.target.value)}
             placeholder="Flavor text contains"
           />
         </div>
@@ -970,11 +927,19 @@ function SearchResultsView({
         <div className="flex flex-wrap items-center gap-3">
           <div className="w-56">
             <Select
-              value={sortKey}
+              value={searchState.sortKey}
               onValueChange={(value) => {
                 const nextKey = value as SortKey;
-                setSortKey(nextKey);
-                setSortDir(DEFAULT_SORT_DIR[nextKey] ?? "asc");
+                setSearchState(
+                  router,
+                  pathname,
+                  searchParams,
+                  {
+                    sortKey: nextKey,
+                    sortDir: DEFAULT_SORT_DIR[nextKey] ?? "asc",
+                  },
+                  { defaultSortKey, setScope: resolvedSetScope },
+                );
               }}
             >
               <SelectTrigger className="w-full">
@@ -1005,10 +970,18 @@ function SearchResultsView({
             size="icon-sm"
             className="rounded-full border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
             onClick={() =>
-              setSortDir((prev) => (prev === "asc" ? "desc" : "asc"))
+              setSearchState(
+                router,
+                pathname,
+                searchParams,
+                {
+                  sortDir: searchState.sortDir === "asc" ? "desc" : "asc",
+                },
+                { defaultSortKey, setScope: resolvedSetScope },
+              )
             }
           >
-            {sortDir === "asc" ? (
+            {searchState.sortDir === "asc" ? (
               <ChevronUp className="size-4" />
             ) : (
               <ChevronDown className="size-4" />
@@ -1038,8 +1011,8 @@ function SearchResultsView({
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              value={nameInput}
+              onChange={(event) => setNameInput(event.target.value)}
               placeholder="Search cards by name"
               className="flex-1"
             />
@@ -1074,9 +1047,9 @@ function SearchResultsView({
 
           {results.length ? (
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {results.map((card) => (
+              {results.map((card, index) => (
                 <CardTile
-                  key={card.canonicalKey}
+                  key={card.representativeUuid ?? `${card.canonicalKey}-${index}`}
                   card={card}
                   onOpen={(key) => {
                     setModalKey(key);
