@@ -43,7 +43,7 @@ function ManaCost({ cost, size = "sm", className }: ManaCostProps) {
       <span className={cn("text-xs text-white/70", className)}>{cost}</span>
     );
   }
-  const sizeClasses = size === "md" ? "h-6 min-w-6 text-xs" : "h-5 min-w-5 text-[0.65rem]";
+  const sizeClasses = size === "md" ? "h-6 w-6 text-xs" : "h-5 w-5 text-[0.65rem]";
 
   return (
     <div
