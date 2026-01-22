@@ -193,18 +193,7 @@ export default function CollectionPage() {
     if (nextIdentity.join(",") !== colorIdentity.join(",")) {
       setColorIdentity(nextIdentity);
     }
-  }, [
-    searchParams,
-    query,
-    oracleText,
-    typeText,
-    colors,
-    colorIdentity,
-    rarity,
-    setCode,
-    sort,
-    manaRange,
-  ]);
+  }, [searchParams]);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -238,7 +227,6 @@ export default function CollectionPage() {
     manaRange,
     pathname,
     router,
-    searchParams,
   ]);
 
   const filteredCards = useMemo(() => {

@@ -13,7 +13,8 @@ type RouteContext = {
 };
 
 export async function GET(_request: Request, context: RouteContext) {
-  const canonicalKey = decodeURIComponent(context.params.canonicalKey);
+  const { canonicalKey: rawKey } = await context.params;
+  const canonicalKey = decodeURIComponent(rawKey);
   const representative = getRepresentativePrintingForCanonicalKey(canonicalKey);
   if (!representative) {
     return NextResponse.json({ error: "Card not found" }, { status: 404 });
