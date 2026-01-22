@@ -50,11 +50,11 @@ function ManaCost({ cost, size = "sm", className }: ManaCostProps) {
       className={cn("flex flex-wrap items-center gap-1", className)}
       aria-label={`Mana cost ${cost}`}
     >
-      {symbols.map((symbol) => {
+      {symbols.map((symbol, index) => {
         const label = symbol.replace(/[{}]/g, "");
         return (
           <span
-            key={`${cost}-${symbol}-${label}`}
+            key={`${label}-${index}`}
             className={cn(baseSymbol, sizeClasses, resolveSymbolClasses(label))}
             title={label}
           >

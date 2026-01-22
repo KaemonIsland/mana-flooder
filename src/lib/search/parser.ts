@@ -4,6 +4,11 @@ export type ManaValueFilter = {
   eq?: number;
 };
 
+export type StatRangeFilter = {
+  min?: number;
+  max?: number;
+};
+
 export type SearchFilters = {
   nameTerms: string[];
   oracleTerms: string[];
@@ -12,8 +17,14 @@ export type SearchFilters = {
   colors?: string[];
   colorIdentity?: string[];
   manaValue?: ManaValueFilter;
+  manaCost?: string;
   rarities?: string[];
   setCodes?: string[];
+  cardTypes?: string[];
+  power?: StatRangeFilter;
+  toughness?: StatRangeFilter;
+  artist?: string;
+  flavor?: string;
 };
 
 const tokenRegex = /"[^"]+"|\S+/g;

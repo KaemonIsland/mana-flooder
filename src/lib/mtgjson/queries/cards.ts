@@ -12,6 +12,7 @@ export type MtgjsonCard = {
   setCode: string | null;
   setName: string | null;
   text: string | null;
+  flavorText: string | null;
   colors: string[];
   colorIdentity: string[];
   supertypes: string[];
@@ -41,6 +42,18 @@ export type MtgjsonPrintingRow = {
   manaCost: string | null;
   manaValue: number | null;
   typeLine: string | null;
+};
+
+export type MtgjsonCardSearchDetail = {
+  uuid: string;
+  name: string;
+  manaCost: string | null;
+  typeLine: string | null;
+  text: string | null;
+  artist: string | null;
+  flavorText: string | null;
+  power: string | null;
+  toughness: string | null;
 };
 
 export type MtgjsonCardLookup = {
@@ -74,6 +87,7 @@ function buildCardsSelect() {
   const cardSetCodeColumn = pickColumn("cards", ["setCode", "set_code"]);
   const setCodeColumn = pickColumn("sets", ["code", "setCode"]);
   const textColumn = pickColumn("cards", ["text", "originalText"]);
+  const flavorColumn = pickColumn("cards", ["flavorText", "flavor", "flavor_text"]);
 
   const joinSets =
     cardSetCodeColumn && setCodeColumn
@@ -90,6 +104,7 @@ function buildCardsSelect() {
     cardSetCodeColumn ? `c.${cardSetCodeColumn} as setCode` : "NULL as setCode",
     selectColumn(setColumns, "name", "setName", "s"),
     textColumn ? `c.${textColumn} as text` : "NULL as text",
+    flavorColumn ? `c.${flavorColumn} as flavorText` : "NULL as flavorText",
     selectColumn(cardColumns, "colors", "colors", "c"),
     selectColumn(cardColumns, "colorIdentity", "colorIdentity", "c"),
     selectColumn(cardColumns, "supertypes", "supertypes", "c"),
@@ -142,6 +157,7 @@ export function getCardByUuid(uuid: string): MtgjsonCard | null {
     setCode: (row.setCode as string | null) ?? null,
     setName: (row.setName as string | null) ?? null,
     text: (row.text as string | null) ?? null,
+    flavorText: (row.flavorText as string | null) ?? null,
     colors: normalizeStringArray(row.colors),
     colorIdentity: normalizeStringArray(row.colorIdentity),
     supertypes: normalizeStringArray(row.supertypes),
@@ -272,6 +288,59 @@ export function getPrintingsByUuids(uuids: string[]): MtgjsonPrintingRow[] {
     manaCost: (row.manaCost as string | null) ?? null,
     manaValue: toNumber(row.manaValue),
     typeLine: (row.typeLine as string | null) ?? null,
+  }));
+}
+
+export function getCardSearchDetailsByUuids(
+  uuids: string[],
+): MtgjsonCardSearchDetail[] {
+  if (!uuids.length) return [];
+  const cardColumns = getTableColumns("cards");
+  if (!cardColumns.size) return [];
+
+  const textColumn = pickColumn("cards", ["text", "originalText"]);
+  const flavorColumn = pickColumn("cards", ["flavorText", "flavor", "flavor_text"]);
+
+  const db = getMtgjsonDb();
+  const params: Record<string, string> = {};
+  const placeholders = uuids.map((uuid, index) => {
+    const key = `uuid_${index}`;
+    params[key] = uuid;
+    return `@${key}`;
+  });
+
+  const selectParts = [
+    "c.uuid as uuid",
+    "c.name as name",
+    selectColumn(cardColumns, "manaCost", "manaCost", "c"),
+    selectColumn(cardColumns, "type", "typeLine", "c"),
+    textColumn ? `c.${textColumn} as text` : "NULL as text",
+    selectColumn(cardColumns, "artist", "artist", "c"),
+    flavorColumn ? `c.${flavorColumn} as flavorText` : "NULL as flavorText",
+    selectColumn(cardColumns, "power", "power", "c"),
+    selectColumn(cardColumns, "toughness", "toughness", "c"),
+  ];
+
+  const rows = db
+    .prepare(
+      `
+        SELECT ${selectParts.join(", ")}
+        FROM cards c
+        WHERE c.uuid IN (${placeholders.join(", ")})
+      `,
+    )
+    .all(params);
+
+  return rows.map((row) => ({
+    uuid: row.uuid as string,
+    name: row.name as string,
+    manaCost: (row.manaCost as string | null) ?? null,
+    typeLine: (row.typeLine as string | null) ?? null,
+    text: (row.text as string | null) ?? null,
+    artist: (row.artist as string | null) ?? null,
+    flavorText: (row.flavorText as string | null) ?? null,
+    power: (row.power as string | null) ?? null,
+    toughness: (row.toughness as string | null) ?? null,
   }));
 }
 
