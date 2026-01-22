@@ -37,7 +37,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <div className="flex min-h-screen bg-transparent">
-          <aside className="hidden w-72 flex-col border-r border-white/10 bg-[color:var(--panel)]/80 backdrop-blur-xl lg:flex">
+          <aside className="hidden w-72 flex-col border-r border-white/10 bg-[color:var(--panel)/0.8] backdrop-blur-xl lg:flex">
             <div className="px-6 py-7">
               <div className="text-lg font-semibold tracking-tight text-white">
                 ManaVault
